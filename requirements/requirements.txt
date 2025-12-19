@@ -1,0 +1,23 @@
+Django>=4.2,<5.0
+djangorestframework>=3.14.0
+psycopg2-binary>=2.9.0
+Pillow>=10.0.0
+python-decouple>=3.8
+django-storages>=1.14.0
+boto3>=1.28.0
+drf-spectacular>=0.27.0
+django-filter>=23.0
+django-cors-headers>=4.3.0
+pyyaml>=6.0
+
+# Celery dependencies for asynchronous task processing
+celery[redis]>=5.3.0
+redis>=4.5.0
+flower>=2.0.0  # Optional: for Celery monitoring
+
+# JWT tokens
+djangorestframework-simplejwt>=5.3.0
+
+# Email and SMS support
+twilio>=8.10.0  # Optional: for SMS service integration
+
