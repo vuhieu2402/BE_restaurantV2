@@ -87,7 +87,7 @@ else:
 # Quan trọng cho monitoring và debugging production issues
 
 import os
-LOGS_DIR = BASE_DIR.parent / 'logs'
+LOGS_DIR = BASE_DIR / 'logs'  # Fixed: use BASE_DIR directly (not .parent)
 LOGS_DIR.mkdir(exist_ok=True)
 
 LOGGING = {

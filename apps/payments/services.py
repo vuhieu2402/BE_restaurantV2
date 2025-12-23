@@ -5,8 +5,12 @@ Xử lý business logic cho Payment
 from decimal import Decimal
 from django.db import transaction
 from django.utils import timezone
+import logging
 from .models import Payment, PaymentMethod
 from apps.orders.models import Order
+from .vnpay_service import vnpay_service
+
+logger = logging.getLogger(__name__)
 
 
 class PaymentService:
@@ -112,35 +116,51 @@ class PaymentService:
     def _generate_payment_url(self, payment, payment_method):
         """
         Generate payment URL cho online payment gateway
-        
+
         Args:
             payment: Payment object
             payment_method: PaymentMethod object
-        
+
         Returns:
             str: Payment URL
-        
-        TODO: Implement integration với các gateway thực tế:
-        - VNPay
-        - MoMo
-        - ZaloPay
-        - Stripe
         """
-        # Placeholder - cần implement theo từng gateway
+        from .vnpay_service import vnpay_service
+
         gateway_code = payment_method.code.lower()
-        
+
         if gateway_code == 'vnpay':
-            # TODO: Integrate VNPay
-            return f"https://sandbox.vnpayment.vn/paymentv2/vpcpay.html?payment_id={payment.id}"
-        
+            try:
+                # Generate VNPay payment URL
+                order_info = f"Thanh toan don hang {payment.order.order_number}"
+                client_ip = '127.0.0.1'  # TODO: Get real client IP
+
+                payment_url, transaction_ref = vnpay_service.generate_payment_url(
+                    order_id=payment.order.order_number,
+                    amount=payment.amount,
+                    order_info=order_info,
+                    client_ip=client_ip
+                )
+
+                # Update payment with transaction reference
+                payment.transaction_id = transaction_ref
+                payment.payment_gateway = 'vnpay'
+                payment.status = 'processing'
+                payment.save(update_fields=['transaction_id', 'payment_gateway', 'status'])
+
+                return payment_url
+
+            except Exception as e:
+                logger.error(f"Error generating VNPay payment URL: {str(e)}")
+                raise
+
         elif gateway_code == 'momo':
             # TODO: Integrate MoMo
             return f"https://test-payment.momo.vn/pay?payment_id={payment.id}"
-        
+
         elif gateway_code == 'zalopay':
             # TODO: Integrate ZaloPay
             return f"https://sbgateway.zalopay.vn/pay?payment_id={payment.id}"
-        
+
         else:
             # Default placeholder
             return f"http://localhost:8000/payment/{payment.payment_number}/process"
@@ -289,3 +309,78 @@ class PaymentService:
             'message': 'Đã hoàn tiền thành công.',
             'payment': payment
         }
+
+    def _get_payment_by_transaction_id(self, transaction_ref):
+        """
+        Get payment by transaction reference
+
+        Args:
+            transaction_ref: Transaction reference from VNPay
+
+        Returns:
+            Payment object
+        """
+        return Payment.objects.get(transaction_id=transaction_ref)
+
+    def process_vnpay_callback(self, payment, callback_data):
+        """
+        Process VNPay callback data
+
+        Args:
+            payment: Payment object
+            callback_data: Processed callback data from VNPay
+
+        Returns:
+            dict: {'success': bool, 'message': str}
+        """
+        try:
+            response_code = callback_data.get('response_code')
+            success = response_code == '00'
+
+            # Convert Decimal to string for JSON serialization
+            json_safe_data = {}
+            for key, value in callback_data.items():
+                if isinstance(value, Decimal):
+                    json_safe_data[key] = str(value)
+                elif hasattr(value, 'isoformat'):  # datetime objects
+                    json_safe_data[key] = value.isoformat()
+                else:
+                    json_safe_data[key] = value
+
+            if success:
+                # Payment successful
+                payment.status = 'completed'
+                payment.transaction_id = callback_data.get('transaction_no', payment.transaction_id)
+                payment.paid_at = timezone.now()
+                payment.gateway_response = json_safe_data
+                payment.save()
+
+                logger.info(f"✅ Payment {payment.id} marked as completed")
+
+                return {
+                    'success': True,
+                    'message': 'Thanh toán thành công.',
+                    'payment': payment
+                }
+            else:
+                # Payment failed
+                error_message = vnpay_service.get_error_message(response_code)
+                payment.status = 'failed'
+                payment.failure_reason = f"VNPay Error {response_code}: {error_message}"
+                payment.gateway_response = json_safe_data
+                payment.save()
+
+                logger.warning(f"⚠️ Payment {payment.id} marked as failed: {error_message}")
+
+                return {
+                    'success': False,
+                    'message': f'Thanh toán thất bại: {error_message}',
+                    'payment': payment
+                }
+
+        except Exception as e:
+            logger.error(f"❌ Error processing VNPay callback for payment {payment.id}: {str(e)}", exc_info=True)
+            return {
+                'success': False,
+                'message': 'Lỗi xử lý callback VNPay'
+            }

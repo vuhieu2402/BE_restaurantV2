@@ -8,7 +8,7 @@ from django.core.exceptions import ValidationError
 from django.utils import timezone
 from .models import Order, OrderItem
 from apps.restaurants.models import Restaurant, Table
-from apps.restaurants.utils import calculate_distance
+from apps.restaurants.utils import calculate_distance, calculate_distance_with_fallback
 from apps.cart.models import Cart
 
 
@@ -19,7 +19,7 @@ class OrderService:
     
     def calculate_delivery_fee_and_distance(self, restaurant_id, delivery_latitude, delivery_longitude):
         """
-        Tính phí giao hàng và khoảng cách
+        Tính phí giao hàng và khoảng cách bằng OSRM (Open Source Routing Machine)
         
         Args:
             restaurant_id: ID restaurant
@@ -33,13 +33,14 @@ class OrderService:
                 'delivery_fee': Decimal,
                 'is_in_delivery_radius': bool,
                 'estimated_time': int (minutes),
+                'distance_source': str (OSRM/Haversine),
                 'restaurant': Restaurant object,
                 'message': str
             }
         """
         try:
             # Get restaurant
-            restaurant = Restaurant.objects.get(
+            restaurant = Restaurant.objects.select_related('delivery_pricing_config').get(
                 id=restaurant_id,
                 is_active=True,
                 latitude__isnull=False,
@@ -51,24 +52,34 @@ class OrderService:
                 'message': 'Chi nhánh không tồn tại hoặc không có thông tin tọa độ.'
             }
         
-        # Tính khoảng cách
-        distance = calculate_distance(
-            float(delivery_latitude),
-            float(delivery_longitude),
+        # Tính khoảng cách thực tế bằng OSRM (with Haversine fallback)
+        distance_result = calculate_distance_with_fallback(
             float(restaurant.latitude),
-            float(restaurant.longitude)
+            float(restaurant.longitude),
+            float(delivery_latitude),
+            float(delivery_longitude)
         )
-        distance_decimal = Decimal(str(distance))
+        
+        if not distance_result['success']:
+            return {
+                'success': False,
+                'message': f"Không thể tính khoảng cách: {distance_result.get('message', 'Unknown error')}"
+            }
+        
+        distance_km = distance_result['distance_km']
+        duration_minutes = distance_result['duration_minutes']
+        distance_source = distance_result['source']
         
         # Kiểm tra trong delivery_radius
-        is_in_radius = distance_decimal <= restaurant.delivery_radius
+        is_in_radius = distance_km <= restaurant.delivery_radius
         
         if not is_in_radius:
             return {
                 'success': False,
-                'distance_km': distance_decimal,
+                'distance_km': distance_km,
                 'is_in_delivery_radius': False,
-                'message': f'Địa chỉ nằm ngoài bán kính giao hàng ({restaurant.delivery_radius}km).'
+                'distance_source': distance_source,
+                'message': f'Địa chỉ nằm ngoài bán kính giao hàng ({restaurant.delivery_radius}km). Khoảng cách thực tế: {distance_km}km.'
             }
         
         # Tính phí giao hàng
@@ -78,32 +89,36 @@ class OrderService:
             per_km_fee = config.per_km_fee
             free_distance = config.free_distance_km
             
-            # Check surge pricing
+            # Check surge pricing (giờ cao điểm)
             if config.is_surge_time():
                 per_km_fee = per_km_fee * config.surge_multiplier
-        except:
-            # Fallback
+                is_surge = True
+            else:
+                is_surge = False
+        except Exception:
+            # Fallback config nếu restaurant chưa có DeliveryPricingConfig
             base_fee = restaurant.delivery_fee
             per_km_fee = Decimal('5000.00')
             free_distance = Decimal('0.00')
+            is_surge = False
         
-        # Tính phí
-        chargeable_distance = max(Decimal('0.00'), distance_decimal - free_distance)
+        # Tính phí: base_fee + (chargeable_distance × per_km_fee)
+        chargeable_distance = max(Decimal('0.00'), distance_km - free_distance)
         delivery_fee = base_fee + (chargeable_distance * per_km_fee)
         delivery_fee = delivery_fee.quantize(Decimal('0.01'))
         
-        # Estimate time (giả sử 30km/h + 15 phút chuẩn bị)
-        travel_time = int((float(distance_decimal) / 30) * 60)  # minutes
-        preparation_time = 15  # minutes
-        estimated_time = travel_time + preparation_time
+        # Add preparation time to OSRM duration
+        estimated_time = duration_minutes + 15  # 15 phút chuẩn bị
         
         return {
             'success': True,
-            'distance_km': distance_decimal,
+            'distance_km': distance_km,
             'delivery_fee': delivery_fee,
             'is_in_delivery_radius': True,
             'estimated_time': estimated_time,
-            'restaurant': restaurant,
+            'distance_source': distance_source,
+            'is_surge_pricing': is_surge,
+            'restaurant': restaurant, 
             'message': 'Tính toán thành công.'
         }
     
@@ -264,6 +279,10 @@ class OrderService:
                 order.delivery_latitude = order_data.get('delivery_latitude')
                 order.delivery_longitude = order_data.get('delivery_longitude')
                 order.delivery_phone = order_data.get('delivery_phone')
+                
+                # ✅ Set distance và delivery_fee từ frontend (đã tính qua API)
+                order.assignment_distance = order_data.get('assignment_distance')
+                order.delivery_fee = order_data.get('delivery_fee', Decimal('0.00'))
             
             elif order_data['order_type'] == 'dine_in':
                 table_id = order_data.get('table_id')
@@ -281,7 +300,7 @@ class OrderService:
             # Set subtotal from cart
             order.subtotal = cart.subtotal
             
-            # Save order (sẽ tự động tính distance và delivery_fee)
+            # Save order (KHÔNG tự động tính distance/fee nữa)
             order.save()
             
             # Create OrderItems from CartItems

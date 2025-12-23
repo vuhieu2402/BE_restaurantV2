@@ -71,8 +71,11 @@ class CalculateDeliveryView(StandardResponseMixin, APIView):
         # Return result
         response_data = {
             'distance_km': float(result['distance_km']),
+            'distance_source': result.get('distance_source', 'Unknown'),
             'delivery_fee': float(result['delivery_fee']),
+            'delivery_fee_display': f"{result['delivery_fee']:,.0f}đ",
             'is_in_delivery_radius': result['is_in_delivery_radius'],
+            'is_surge_pricing': result.get('is_surge_pricing', False),
             'estimated_time': result['estimated_time'],
             'restaurant': {
                 'id': result['restaurant'].id,
@@ -84,7 +87,7 @@ class CalculateDeliveryView(StandardResponseMixin, APIView):
         
         return ApiResponse.success(
             data=response_data,
-            message="Tính toán thành công"
+            message=f"Tính toán thành công (sử dụng {result.get('distance_source', 'Unknown')})"
         )
 
 

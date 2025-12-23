@@ -2,7 +2,8 @@ from pathlib import Path
 from decouple import config
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
-BASE_DIR = Path(__file__).resolve().parent.parent
+# base.py is in config/settings/, so we need 3x parent to get to project root
+BASE_DIR = Path(__file__).resolve().parent.parent.parent
 
 SECRET_KEY = None  # Phải được set trong environment-specific settings
 DEBUG = None  # Phải được set trong environment-specific settings
@@ -310,6 +311,39 @@ CORS_ALLOWED_METHODS = [
 
 # CORS_PREFLIGHT_MAX_AGE - Cache preflight requests for this many seconds
 CORS_PREFLIGHT_MAX_AGE = 86400  # 24 hours
+
+
+# ==================== VNPay CONFIGURATION ====================
+# VNPay Payment Gateway Configuration
+# https://sandbox.vnpayment.vn/merchant_webapi/api/transaction
+
+# VNPay API Configuration
+VNPAY_API_URL = config('VNPAY_API_URL', default='https://sandbox.vnpayment.vn/merchant_webapi/api/transaction')
+VNPAY_PAYMENT_URL = config('VNPAY_PAYMENT_URL', default='https://sandbox.vnpayment.vn/paymentv2/vpcpay.html')
+VNPAY_TMN_CODE = config('VNPAY_TMN_CODE', default='ENP3VCHI')
+VNPAY_HASH_SECRET_KEY = config('VNPAY_HASH_SECRET_KEY', default='9HS0M7HREHKT5GF539YJJ8HSLC8LD0OF')
+VNPAY_VERSION = config('VNPAY_VERSION', default='2.1.0')
+VNPAY_COMMAND = config('VNPAY_COMMAND', default='pay')
+
+# VNPay URLs Configuration
+VNPAY_RETURN_URL = config('VNPAY_RETURN_URL', default='http://localhost:8000/api/payments/vnpay/return/')
+VNPAY_CALLBACK_URL = config('VNPAY_CALLBACK_URL', default='http://localhost:8000/api/payments/vnpay/callback/')
+
+# VNPay Payment Configuration
+VNPAY_CURRENCY_CODE = config('VNPAY_CURRENCY_CODE', default='VND')
+VNPAY_LOCALE = config('VNPAY_LOCALE', default='vn')
+VNPAY_ORDER_TYPE = config('VNPAY_ORDER_TYPE', default='billpayment')
+
+# VNPay Timeout Configuration (in seconds)
+VNPAY_TIMEOUT = config('VNPAY_TIMEOUT', default=300, cast=int)  # 5 minutes
+
+# VNPay Production Settings (set to True for production)
+VNPAY_PRODUCTION = config('VNPAY_PRODUCTION', default=False, cast=bool)
+
+# Override URLs for production
+if VNPAY_PRODUCTION:
+    VNPAY_API_URL = config('VNPAY_PRODUCTION_API_URL', default='https://vnpayment.vn/merchant_webapi/api/transaction')
+    VNPAY_PAYMENT_URL = config('VNPAY_PRODUCTION_PAYMENT_URL', default='https://vnpayment.vn/paymentv2/vpcpay.html')
 
 
 # ==================== LOGGING CONFIGURATION ====================

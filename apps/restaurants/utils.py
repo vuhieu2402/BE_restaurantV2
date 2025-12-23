@@ -2,6 +2,133 @@
 Utility functions for Restaurant app
 """
 import math
+import requests
+import logging
+from decimal import Decimal
+
+logger = logging.getLogger(__name__)
+
+
+def calculate_distance_osrm(origin_lat, origin_lng, dest_lat, dest_lng):
+    """
+    Tính khoảng cách thực tế bằng OSRM (Open Source Routing Machine)
+    
+    Args:
+        origin_lat, origin_lng: Tọa độ điểm xuất phát
+        dest_lat, dest_lng: Tọa độ điểm đến
+    
+    Returns:
+        dict: {
+            'success': bool,
+            'distance_km': Decimal,
+            'duration_minutes': int,
+            'source': str
+        }
+    """
+    # OSRM API endpoint (public, free, no API key needed)
+    url = f"http://router.project-osrm.org/route/v1/driving/{origin_lng},{origin_lat};{dest_lng},{dest_lat}"
+    
+    params = {
+        'overview': 'false',
+        'alternatives': 'false',
+        'steps': 'false'
+    }
+    
+    try:
+        response = requests.get(url, params=params, timeout=10)
+        response.raise_for_status()
+        data = response.json()
+        
+        if data.get('code') == 'Ok' and data.get('routes'):
+            route = data['routes'][0]
+            
+            # Distance in meters → convert to km
+            distance_meters = route['distance']
+            distance_km = Decimal(str(round(distance_meters / 1000, 2)))
+            
+            # Duration in seconds → convert to minutes
+            duration_seconds = route['duration']
+            duration_minutes = int(duration_seconds / 60)
+            
+            logger.info(f"OSRM calculated distance: {distance_km}km, duration: {duration_minutes}min")
+            
+            return {
+                'success': True,
+                'distance_km': distance_km,
+                'duration_minutes': duration_minutes,
+                'source': 'OSRM'
+            }
+        else:
+            logger.warning(f"OSRM returned non-Ok code: {data.get('code')}")
+            return {
+                'success': False,
+                'message': f"OSRM error: {data.get('code', 'Unknown')}"
+            }
+            
+    except requests.exceptions.Timeout:
+        logger.error("OSRM request timeout")
+        return {
+            'success': False,
+            'message': 'OSRM request timeout'
+        }
+    except requests.exceptions.RequestException as e:
+        logger.error(f"OSRM request failed: {str(e)}")
+        return {
+            'success': False,
+            'message': f'OSRM request failed: {str(e)}'
+        }
+    except Exception as e:
+        logger.error(f"Unexpected error in OSRM: {str(e)}")
+        return {
+            'success': False,
+            'message': f'Error: {str(e)}'
+        }
+
+
+def calculate_distance_with_fallback(origin_lat, origin_lng, dest_lat, dest_lng):
+    """
+    Tính khoảng cách với fallback strategy:
+    1. Try OSRM (routing API - chính xác)
+    2. Fallback to Haversine + routing factor
+    
+    Returns:
+        dict: Same format as calculate_distance_osrm
+    """
+    # Try OSRM first
+    result = calculate_distance_osrm(origin_lat, origin_lng, dest_lat, dest_lng)
+    
+    if result['success']:
+        return result
+    
+    # Fallback: Haversine + routing factor
+    logger.warning("OSRM failed, using Haversine fallback")
+    
+    haversine_distance = calculate_distance(origin_lat, origin_lng, dest_lat, dest_lng)
+    
+    # Apply routing factor based on distance
+    if haversine_distance < 2:
+        routing_factor = 1.4  # Nội thành, nhiều ngã tư
+    elif haversine_distance < 5:
+        routing_factor = 1.3
+    elif haversine_distance < 10:
+        routing_factor = 1.25
+    else:
+        routing_factor = 1.2  # Xa, đường thẳng hơn
+    
+    adjusted_distance = Decimal(str(round(haversine_distance * routing_factor, 2)))
+    
+    # Estimate time: 30km/h + 15min preparation
+    travel_time = int((float(adjusted_distance) / 30) * 60)
+    estimated_time = travel_time + 15
+    
+    logger.info(f"Haversine fallback: {adjusted_distance}km (factor: {routing_factor})")
+    
+    return {
+        'success': True,
+        'distance_km': adjusted_distance,
+        'duration_minutes': estimated_time,
+        'source': 'Haversine+Factor (Fallback)'
+    }
 
 
 def calculate_distance(lat1, lon1, lat2, lon2):

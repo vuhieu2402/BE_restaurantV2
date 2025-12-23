@@ -327,7 +327,14 @@ class Order(TimestampMixin):
         return delivery_fee.quantize(Decimal('0.01'))
     
     def save(self, *args, **kwargs):
-        """Tự động tạo order_number, tính distance và delivery_fee"""
+        """
+        Tự động tạo order_number
+        
+        Note: 
+        - Distance và delivery_fee KHÔNG tự động tính nữa
+        - Phải được tính qua API /api/orders/calculate-delivery/ trước
+        - Và truyền vào khi tạo Order
+        """
         # Tạo order_number
         if not self.order_number:
             from django.utils import timezone
@@ -336,24 +343,10 @@ class Order(TimestampMixin):
             random_num = random.randint(1000, 9999)
             self.order_number = f"ORD{timestamp}{random_num}"
         
-        # Tự động tính assignment_distance nếu là delivery
-        if self.order_type == 'delivery' and self.restaurant:
-            if self.delivery_latitude and self.delivery_longitude:
-                calculated_distance = self.calculate_distance_to_restaurant()
-                if calculated_distance is not None:
-                    self.assignment_distance = calculated_distance
-                    # Set assignment_method to 'customer' (user đã chọn restaurant)
-                    if not self.assignment_method or self.assignment_method == 'manual':
-                        self.assignment_method = 'customer'
-        
-        # Tự động tính delivery_fee nếu chưa có hoặc = 0
-        if self.order_type == 'delivery' and self.assignment_distance:
-            calculated_fee = self.calculate_delivery_fee()
-            if calculated_fee is not None:
-                self.delivery_fee = calculated_fee
-        elif self.order_type in ['dine_in', 'takeaway']:
-            # Đơn ăn tại chỗ hoặc mang đi không có phí ship
+        # Set delivery_fee = 0 cho dine_in/takeaway
+        if self.order_type in ['dine_in', 'takeaway']:
             self.delivery_fee = 0
+            self.assignment_distance = None
         
         # Validate
         self.full_clean()
