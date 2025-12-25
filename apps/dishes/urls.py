@@ -19,7 +19,10 @@ urlpatterns = [
 
     # Menu item endpoints
     path('<int:restaurant_id>/menu-items/', views.MenuItemListView.as_view(), name='menu-item-list'),
-    path('<int:restaurant_id>/menu-items/<int:item_id>/', views.MenuItemDetailView.as_view(), name='menu-item-detail'),
+    path('menu-items/<int:item_id>/', views.MenuItemDetailView.as_view(), name='menu-item-detail'),
+    path('<int:restaurant_id>/menu-items/<int:item_id>/', views.MenuItemUpdateDeleteView.as_view(), name='menu-item-update-delete'),
+    path('<int:restaurant_id>/menu-items/<int:item_id>/images/', views.MenuItemImageView.as_view(), name='menu-item-images'),
+    path('<int:restaurant_id>/menu-items/<int:item_id>/images/<int:image_id>/', views.MenuItemImageDetailView.as_view(), name='menu-item-image-detail'),
     path('<int:restaurant_id>/menu-items/featured/', views.FeaturedMenuItemsView.as_view(), name='featured-menu-items'),
     path('<int:restaurant_id>/menu-items/search/', views.MenuSearchView.as_view(), name='menu-item-search'),
     path('<int:restaurant_id>/menu-items/toggle-availability/', views.MenuToggleView.as_view(), name='toggle-item-availability'),

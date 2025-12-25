@@ -1,6 +1,6 @@
 from rest_framework import serializers
 from django.contrib.auth import get_user_model
-from .models import Category, MenuItem
+from .models import Category, MenuItem, MenuItemImage
 
 User = get_user_model()
 
@@ -125,6 +125,37 @@ class CategoryWithItemsSerializer(serializers.ModelSerializer):
         return MenuItemListSerializer(items, many=True, context=self.context).data
 
 
+class MenuItemImageSerializer(serializers.ModelSerializer):
+    """
+    Serializer cho MenuItemImage model
+    """
+    class Meta:
+        model = MenuItemImage
+        fields = [
+            'id', 'menu_item', 'image', 'alt_text',
+            'display_order', 'created_at', 'updated_at'
+        ]
+        read_only_fields = ['id', 'created_at', 'updated_at']
+
+
+class MenuItemImageCreateSerializer(serializers.ModelSerializer):
+    """
+    Serializer cho creating MenuItemImage
+    """
+    class Meta:
+        model = MenuItemImage
+        fields = ['image', 'alt_text', 'display_order']
+
+
+class MenuItemImageUpdateSerializer(serializers.ModelSerializer):
+    """
+    Serializer cho updating MenuItemImage
+    """
+    class Meta:
+        model = MenuItemImage
+        fields = ['image', 'alt_text', 'display_order']
+
+
 class MenuItemSerializer(serializers.ModelSerializer):
     """
     Serializer cho MenuItem model
@@ -133,19 +164,20 @@ class MenuItemSerializer(serializers.ModelSerializer):
     discount_percentage = serializers.ReadOnlyField()
     owner_type = serializers.SerializerMethodField()
     owner_name = serializers.SerializerMethodField()
+    additional_images = MenuItemImageSerializer(many=True, read_only=True)
 
     class Meta:
         model = MenuItem
         fields = [
             'id', 'chain', 'restaurant', 'owner_type', 'owner_name',
             'category', 'name', 'slug', 'description',
-            'price', 'original_price', 'image', 'calories', 'preparation_time',
+            'price', 'original_price', 'image', 'additional_images', 'calories', 'preparation_time',
             'rating', 'total_reviews', 'rating_distribution', 'last_rated_at',
             'verified_purchase_percentage', 'is_available', 'is_featured',
             'is_vegetarian', 'is_spicy', 'display_order',
             'is_on_sale', 'discount_percentage', 'created_at', 'updated_at'
         ]
-        read_only_fields = ['id', 'created_at', 'updated_at', 'is_on_sale', 'discount_percentage', 'owner_type', 'owner_name']
+        read_only_fields = ['id', 'created_at', 'updated_at', 'is_on_sale', 'discount_percentage', 'owner_type', 'owner_name', 'additional_images']
     
     def get_owner_type(self, obj):
         """Get whether this belongs to chain or restaurant"""
@@ -326,12 +358,13 @@ class MenuItemDetailSerializer(serializers.ModelSerializer):
     category_slug = serializers.SerializerMethodField()
     formatted_price = serializers.SerializerMethodField()
     formatted_original_price = serializers.SerializerMethodField()
+    additional_images = MenuItemImageSerializer(many=True, read_only=True)
 
     class Meta:
         model = MenuItem
         fields = [
             'id', 'name', 'slug', 'description', 'price', 'original_price',
-            'image', 'calories', 'preparation_time', 'rating',
+            'image', 'additional_images', 'calories', 'preparation_time', 'rating',
             'total_reviews', 'rating_distribution', 'last_rated_at',
             'verified_purchase_percentage', 'is_available', 'is_featured',
             'is_vegetarian', 'is_spicy', 'display_order',

@@ -12,6 +12,7 @@ from .serializers import (
     CategoryListSerializer, CategoryWithItemsSerializer,
     MenuItemSerializer, MenuItemCreateSerializer, MenuItemUpdateSerializer,
     MenuItemListSerializer, MenuItemDetailSerializer, FeaturedMenuItemSerializer,
+    MenuItemImageSerializer, MenuItemImageCreateSerializer, MenuItemImageUpdateSerializer,
     CategorySearchSerializer, MenuItemSearchSerializer, CategoryReorderSerializer,
     MenuItemToggleSerializer, MenuItemPriceUpdateSerializer, BulkPriceUpdateSerializer,
     BulkPriceUpdateSerializer, CategoryReorderBulkSerializer, MenuAnalyticsSerializer,
@@ -499,9 +500,7 @@ class MenuItemListView(StandardResponseMixin, ListAPIView):
 
 class MenuItemDetailView(StandardResponseMixin, APIView):
     """
-    GET /api/restaurants/{restaurant_id}/menu-items/{item_id}/ - Get menu item details
-    PUT /api/restaurants/{restaurant_id}/menu-items/{item_id}/ - Update menu item
-    DELETE /api/restaurants/{restaurant_id}/menu-items/{item_id}/ - Delete menu item
+    GET /api/menu-items/{item_id}/ - Get menu item details (chỉ cần item_id)
     """
     permission_classes = [permissions.AllowAny]  # Public access for GET
 
@@ -511,24 +510,19 @@ class MenuItemDetailView(StandardResponseMixin, APIView):
         description="Get detailed information about a specific menu item",
         responses={200: MenuItemDetailSerializer}
     )
-    def get(self, request, restaurant_id, item_id):
+    def get(self, request, item_id):
         """
         GET method - View chỉ làm 2 việc:
         1. Nhận request và validate cơ bản
         2. Gọi service/selector và return response
         """
         try:
-            # ✅ Validate menu item exists and belongs to restaurant
+            # ✅ Validate menu item exists
             selector = MenuItemSelector()
             menu_item = selector.get_menu_item_by_id(item_id)
 
             if not menu_item:
                 return self.not_found_response(message="Menu item not found")
-
-            if menu_item.restaurant_id != int(restaurant_id):
-                return self.error_response(
-                    message="Menu item does not belong to this restaurant"
-                )
 
             # Serialize menu item data
             serializer = MenuItemDetailSerializer(menu_item, context={'request': request})
@@ -543,6 +537,14 @@ class MenuItemDetailView(StandardResponseMixin, APIView):
                 message=f"Error: {str(e)}",
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
+
+
+class MenuItemUpdateDeleteView(StandardResponseMixin, APIView):
+    """
+    PUT /api/restaurants/{restaurant_id}/menu-items/{item_id}/ - Update menu item
+    DELETE /api/restaurants/{restaurant_id}/menu-items/{item_id}/ - Delete menu item
+    """
+    permission_classes = [permissions.AllowAny]  # Public access
 
     @extend_schema(
         tags=['Dishes'],
@@ -1037,6 +1039,215 @@ class MenuAnalyticsView(StandardResponseMixin, APIView):
                 )
             else:
                 return self.error_response(message=result['message'])
+
+        except Exception as e:
+            return self.error_response(
+                message=f"Error: {str(e)}",
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+
+class MenuItemImageView(StandardResponseMixin, APIView):
+    """
+    GET /api/restaurants/{restaurant_id}/menu-items/{item_id}/images/ - List all images for a menu item
+    POST /api/restaurants/{restaurant_id}/menu-items/{item_id}/images/ - Add new image to menu item
+    """
+    permission_classes = [permissions.AllowAny]  # Public access for GET
+
+    @extend_schema(
+        tags=['Dishes'],
+        summary="List menu item images",
+        description="Get all images (primary + additional) for a specific menu item",
+        responses={200: MenuItemImageSerializer(many=True)}
+    )
+    def get(self, request, restaurant_id, item_id):
+        """
+        GET method - List all images for a menu item
+        """
+        try:
+            # Validate menu item exists and belongs to restaurant
+            selector = MenuItemSelector()
+            menu_item = selector.get_menu_item_by_id(item_id)
+
+            if not menu_item:
+                return self.not_found_response(message="Menu item not found")
+
+            if menu_item.restaurant_id != int(restaurant_id):
+                return self.error_response(
+                    message="Menu item does not belong to this restaurant"
+                )
+
+            # Get all additional images
+            from .models import MenuItemImage
+            images = MenuItemImage.objects.filter(
+                menu_item_id=item_id
+            ).order_by('display_order', 'id')
+
+            serializer = MenuItemImageSerializer(images, many=True, context={'request': request})
+
+            # Include primary image info in response
+            response_data = {
+                'primary_image': menu_item.image if menu_item.image else None,
+                'additional_images': serializer.data
+            }
+
+            return self.success_response(
+                data=response_data,
+                message="Menu item images retrieved successfully"
+            )
+
+        except Exception as e:
+            return self.error_response(
+                message=f"Error: {str(e)}",
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+    @extend_schema(
+        tags=['Dishes'],
+        summary="Add image to menu item",
+        description="Add a new additional image to a menu item",
+        request=MenuItemImageCreateSerializer,
+        responses={201: MenuItemImageSerializer}
+    )
+    def post(self, request, restaurant_id, item_id):
+        """
+        POST method - Add new image to menu item
+        """
+        try:
+            # Validate menu item exists and belongs to restaurant
+            selector = MenuItemSelector()
+            menu_item = selector.get_menu_item_by_id(item_id)
+
+            if not menu_item:
+                return self.not_found_response(message="Menu item not found")
+
+            if menu_item.restaurant_id != int(restaurant_id):
+                return self.error_response(
+                    message="Menu item does not belong to this restaurant"
+                )
+
+            # Validate required fields
+            if 'image' not in request.data:
+                return self.error_response(
+                    message="Missing required field: image"
+                )
+
+            # Create new image
+            from .models import MenuItemImage
+            image_data = request.data.copy()
+            image_data['menu_item'] = menu_item.id
+
+            serializer = MenuItemImageCreateSerializer(data=image_data)
+            if serializer.is_valid():
+                image_obj = serializer.save(menu_item=menu_item)
+                response_serializer = MenuItemImageSerializer(image_obj, context={'request': request})
+                return self.created_response(
+                    data=response_serializer.data,
+                    message="Image added successfully"
+                )
+            else:
+                return self.error_response(
+                    message="Validation failed",
+                    errors=serializer.errors
+                )
+
+        except Exception as e:
+            return self.error_response(
+                message=f"Error: {str(e)}",
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+
+class MenuItemImageDetailView(StandardResponseMixin, APIView):
+    """
+    PUT /api/restaurants/{restaurant_id}/menu-items/{item_id}/images/{image_id}/ - Update image
+    DELETE /api/restaurants/{restaurant_id}/menu-items/{item_id}/images/{image_id}/ - Delete image
+    """
+    permission_classes = [permissions.AllowAny]  # Public access for GET
+
+    @extend_schema(
+        tags=['Dishes'],
+        summary="Update menu item image",
+        description="Update an additional image of a menu item",
+        request=MenuItemImageUpdateSerializer,
+        responses={200: MenuItemImageSerializer}
+    )
+    def put(self, request, restaurant_id, item_id, image_id):
+        """
+        PUT method - Update image
+        """
+        try:
+            # Validate menu item exists and belongs to restaurant
+            selector = MenuItemSelector()
+            menu_item = selector.get_menu_item_by_id(item_id)
+
+            if not menu_item:
+                return self.not_found_response(message="Menu item not found")
+
+            if menu_item.restaurant_id != int(restaurant_id):
+                return self.error_response(
+                    message="Menu item does not belong to this restaurant"
+                )
+
+            # Get image
+            from .models import MenuItemImage
+            try:
+                image = MenuItemImage.objects.get(id=image_id, menu_item_id=item_id)
+            except MenuItemImage.DoesNotExist:
+                return self.not_found_response(message="Image not found")
+
+            # Update image
+            serializer = MenuItemImageUpdateSerializer(image, data=request.data, partial=True)
+            if serializer.is_valid():
+                serializer.save()
+                response_serializer = MenuItemImageSerializer(image, context={'request': request})
+                return self.success_response(
+                    data=response_serializer.data,
+                    message="Image updated successfully"
+                )
+            else:
+                return self.error_response(
+                    message="Validation failed",
+                    errors=serializer.errors
+                )
+
+        except Exception as e:
+            return self.error_response(
+                message=f"Error: {str(e)}",
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+    @extend_schema(
+        tags=['Dishes'],
+        summary="Delete menu item image",
+        description="Delete an additional image from a menu item",
+        responses={204}
+    )
+    def delete(self, request, restaurant_id, item_id, image_id):
+        """
+        DELETE method - Delete image
+        """
+        try:
+            # Validate menu item exists and belongs to restaurant
+            selector = MenuItemSelector()
+            menu_item = selector.get_menu_item_by_id(item_id)
+
+            if not menu_item:
+                return self.not_found_response(message="Menu item not found")
+
+            if menu_item.restaurant_id != int(restaurant_id):
+                return self.error_response(
+                    message="Menu item does not belong to this restaurant"
+                )
+
+            # Get and delete image
+            from .models import MenuItemImage
+            try:
+                image = MenuItemImage.objects.get(id=image_id, menu_item_id=item_id)
+                image.delete()
+                return self.deleted_response(message="Image deleted successfully")
+            except MenuItemImage.DoesNotExist:
+                return self.not_found_response(message="Image not found")
 
         except Exception as e:
             return self.error_response(

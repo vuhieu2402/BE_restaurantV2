@@ -308,11 +308,55 @@ class MenuItem(TimestampMixin):
     def is_on_sale(self):
         """Kiểm tra có đang giảm giá không"""
         return self.original_price and self.original_price > self.price
-    
+
     @property
     def discount_percentage(self):
         """Phần trăm giảm giá"""
         if self.is_on_sale:
             return int(((self.original_price - self.price) / self.original_price) * 100)
         return 0
+
+
+class MenuItemImage(TimestampMixin):
+    """
+    Hình ảnh bổ sung cho món ăn - Cho phép một món có nhiều hình ảnh
+    Lưu ý: Hình ảnh chính vẫn nằm trong MenuItem.image
+    """
+    menu_item = models.ForeignKey(
+        MenuItem,
+        on_delete=models.CASCADE,
+        related_name='additional_images',
+        help_text="Món ăn"
+    )
+
+    image = models.ImageField(
+        upload_to='menu_items/',
+        storage=MinIOMediaStorage(),
+        help_text="Hình ảnh bổ sung"
+    )
+
+    alt_text = models.CharField(
+        max_length=200,
+        blank=True,
+        null=True,
+        help_text="Alt text cho hình ảnh (cho accessibility)"
+    )
+
+    display_order = models.IntegerField(
+        default=0,
+        help_text="Thứ tự hiển thị"
+    )
+
+    class Meta:
+        db_table = 'menu_item_images'
+        verbose_name = 'Hình ảnh món ăn'
+        verbose_name_plural = 'Hình ảnh món ăn'
+        ordering = ['display_order', 'id']
+        indexes = [
+            models.Index(fields=['menu_item', 'display_order']),
+        ]
+
+    def __str__(self):
+        menu_item_name = self.menu_item.name if self.menu_item else "Unknown"
+        return f"{menu_item_name} - Additional Image {self.id}"
 

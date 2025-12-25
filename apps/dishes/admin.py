@@ -1,6 +1,24 @@
 from django.contrib import admin
 from django.utils.html import format_html
-from .models import Category, MenuItem
+from .models import Category, MenuItem, MenuItemImage
+
+
+class MenuItemImageInline(admin.TabularInline):
+    """Inline admin cho MenuItemImage - quản lý ảnh bổ sung trong MenuItem"""
+    model = MenuItemImage
+    extra = 0
+    fields = ('image_preview', 'alt_text', 'display_order')
+    readonly_fields = ('image_preview', 'created_at', 'updated_at')
+
+    def image_preview(self, obj):
+        """Hiển thị preview ảnh"""
+        if obj.image:
+            return format_html(
+                '<img src="{}" style="max-height: 80px; max-width: 80px;" />',
+                obj.image.url
+            )
+        return "Chưa có ảnh"
+    image_preview.short_description = "Preview"
 
 
 @admin.register(Category)
@@ -61,9 +79,10 @@ class CategoryAdmin(admin.ModelAdmin):
 class MenuItemAdmin(admin.ModelAdmin):
     """Admin cho MenuItem"""
     list_display = [
-        'name', 'owner_display', 'category', 'price', 
-        'is_available', 'is_featured', 'rating', 'image_preview', 'created_at'
+        'name', 'owner_display', 'category', 'price',
+        'is_available', 'is_featured', 'rating', 'image_preview', 'images_count', 'created_at'
     ]
+    inlines = [MenuItemImageInline]
     list_filter = [
         'chain', 'restaurant', 'category', 'is_available', 'is_featured', 
         'is_vegetarian', 'is_spicy', 'created_at'
@@ -98,7 +117,7 @@ class MenuItemAdmin(admin.ModelAdmin):
         }),
         ('Trạng thái', {
             'fields': (
-                'is_available', 'is_featured', 'is_vegetarian', 
+                'is_available', 'is_featured', 'is_vegetarian',
                 'is_spicy', 'display_order'
             )
         }),
@@ -106,7 +125,7 @@ class MenuItemAdmin(admin.ModelAdmin):
             'fields': ('created_at', 'updated_at')
         }),
     )
-    
+
     def owner_display(self, obj):
         """Hiển thị chain hoặc restaurant"""
         if obj.chain:
@@ -121,12 +140,62 @@ class MenuItemAdmin(admin.ModelAdmin):
             )
         return "-"
     owner_display.short_description = "Thuộc về"
-    
+
     def image_preview(self, obj):
         """Hiển thị preview ảnh"""
         if obj.image:
             return format_html(
                 '<img src="{}" style="max-height: 100px; max-width: 100px;" />',
+                obj.image.url
+            )
+        return "Chưa có ảnh"
+    image_preview.short_description = "Preview Ảnh"
+
+    def images_count(self, obj):
+        """Hiển thị số lượng ảnh bổ sung"""
+        count = obj.additional_images.count()
+        if count > 0:
+            return format_html(
+                '<span style="color: green; font-weight: bold;">{} ảnh</span>',
+                count
+            )
+        return format_html('<span style="color: #999;">0 ảnh</span>')
+    images_count.short_description = "Ảnh bổ sung"
+
+
+@admin.register(MenuItemImage)
+class MenuItemImageAdmin(admin.ModelAdmin):
+    """Admin cho MenuItemImage"""
+    list_display = [
+        'menu_item', 'image_preview', 'alt_text',
+        'display_order', 'created_at'
+    ]
+    list_filter = ['menu_item__restaurant', 'menu_item__category', 'created_at']
+    search_fields = [
+        'menu_item__name', 'alt_text'
+    ]
+    readonly_fields = ['image_preview', 'created_at', 'updated_at']
+
+    fieldsets = (
+        ('Thông tin món ăn', {
+            'fields': ('menu_item',)
+        }),
+        ('Hình ảnh', {
+            'fields': ('image', 'image_preview', 'alt_text')
+        }),
+        ('Hiển thị', {
+            'fields': ('display_order',)
+        }),
+        ('Thời gian', {
+            'fields': ('created_at', 'updated_at')
+        }),
+    )
+
+    def image_preview(self, obj):
+        """Hiển thị preview ảnh"""
+        if obj.image:
+            return format_html(
+                '<img src="{}" style="max-height: 150px; max-width: 150px;" />',
                 obj.image.url
             )
         return "Chưa có ảnh"
