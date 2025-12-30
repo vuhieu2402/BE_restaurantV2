@@ -3,8 +3,8 @@ from django.utils import timezone
 from django.core.exceptions import ValidationError
 from django.contrib.auth import get_user_model
 from rest_framework import status
-from .models import MenuItemRating, RatingResponse, RatingHelpful
-from .selectors import RatingSelector, RatingCategorySelector, RatingResponseSelector
+from .models import MenuItemReview, ReviewResponse
+from .selectors import RatingSelector, RatingCategorySelector, ReviewResponseSelector
 from apps.api.response import ApiResponse
 from apps.orders.models import OrderItem
 
@@ -16,7 +16,7 @@ class RatingService:
 
     def __init__(self):
         self.rating_selector = RatingSelector()
-        self.response_selector = RatingResponseSelector()
+        self.response_selector = ReviewResponseSelector()
 
     def create_or_update_rating(self, user, menu_item_id, rating_data):
         """Create or update a menu item rating"""
@@ -112,52 +112,6 @@ class RatingService:
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
 
-    def mark_rating_helpful(self, user, rating_id, is_helpful):
-        """Mark a rating as helpful or not helpful"""
-        try:
-            rating = self.rating_selector.get_rating_by_id(rating_id)
-
-            if not rating:
-                return ApiResponse.not_found(message="Rating not found")
-
-            # Check if user already voted
-            if RatingHelpful.objects.filter(rating=rating, user=user).exists():
-                return ApiResponse.bad_request(
-                    message="You have already voted on this review"
-                )
-
-            # Prevent rating owner from voting on their own review
-            if rating.user == user:
-                return ApiResponse.bad_request(
-                    message="You cannot vote on your own review"
-                )
-
-            with transaction.atomic():
-                # Record the vote
-                RatingHelpful.objects.create(
-                    rating=rating,
-                    user=user,
-                    is_helpful=is_helpful
-                )
-
-                # Update helpful counts
-                if is_helpful:
-                    rating.helpful_count += 1
-                else:
-                    rating.not_helpful_count += 1
-                rating.save(update_fields=['helpful_count', 'not_helpful_count'])
-
-            vote_type = "helpful" if is_helpful else "not helpful"
-            return ApiResponse.success(
-                message=f"Review marked as {vote_type}"
-            )
-
-        except Exception as e:
-            return ApiResponse.error(
-                message=f"Error marking rating: {str(e)}",
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR
-            )
-
     def report_rating(self, user, rating_id, report_data):
         """Report an inappropriate rating"""
         try:
@@ -209,12 +163,11 @@ class RatingService:
 
     def _create_rating(self, user, menu_item, rating_data):
         """Create a new rating"""
-        rating = MenuItemRating.objects.create(
+        rating = MenuItemReview.objects.create(
             user=user,
             menu_item=menu_item,
             rating=rating_data['rating'],
-            review_text=rating_data.get('review_text', ''),
-            review_images=rating_data.get('review_images', []),
+            content=rating_data.get('content', ''),
             ip_address=self._get_client_ip(),
             is_verified_purchase=self._check_verified_purchase(user, menu_item)
         )
@@ -223,8 +176,7 @@ class RatingService:
     def _update_rating(self, rating, rating_data):
         """Update an existing rating"""
         rating.rating = rating_data['rating']
-        rating.review_text = rating_data.get('review_text', rating.review_text)
-        rating.review_images = rating_data.get('review_images', rating.review_images)
+        rating.content = rating_data.get('content', rating.content)
         rating.save()
         return rating
 
@@ -248,7 +200,9 @@ class RatingService:
             rating.is_approved = True
             rating.save(update_fields=['is_approved'])
         # Auto-approve for new users with no history of spam
-        elif rating.user.total_orders > 0 and rating.rating >= 3:
+        elif (hasattr(rating.user, 'customer_profile') and 
+              rating.user.customer_profile.total_orders > 0 and 
+              rating.rating >= 3):
             rating.is_approved = True
             rating.save(update_fields=['is_approved'])
 
@@ -257,13 +211,13 @@ class RatingService:
         self.rating_selector.update_menu_item_rating_stats(menu_item_id)
 
 
-class RatingResponseService:
+class ReviewResponseService:
     """Service class for rating response operations"""
 
     def __init__(self):
-        self.response_selector = RatingResponseSelector()
+        self.response_selector = ReviewResponseSelector()
 
-    def create_response(self, user, rating_id, response_text):
+    def create_response(self, user, rating_id, content):
         """Create a response to a rating"""
         try:
             rating = RatingSelector().get_rating_by_id(rating_id)
@@ -278,10 +232,10 @@ class RatingResponseService:
                 )
 
             with transaction.atomic():
-                response = RatingResponse.objects.create(
-                    rating=rating,
+                response = ReviewResponse.objects.create(
+                    review=rating,
                     responder=user,
-                    response_text=response_text,
+                    content=content,
                     is_public=True
                 )
 
@@ -299,23 +253,19 @@ class RatingResponseService:
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
 
-    def update_response(self, user, response_id, response_text):
+    def update_response(self, user, response_id, content):
         """Update a rating response"""
         try:
-            response = self.response_selector.get_responses_by_user(
-                user.id, {'rating_id': response_id}
+            response = ReviewResponse.objects.filter(
+                id=response_id,
+                responder=user
             ).first()
 
             if not response:
                 return ApiResponse.not_found(message="Response not found")
 
-            if response.responder != user:
-                return ApiResponse.forbidden(
-                    message="You can only edit your own responses"
-                )
-
-            response.response_text = response_text
-            response.save(update_fields=['response_text', 'updated_at'])
+            response.content = content
+            response.save(update_fields=['content', 'updated_at'])
 
             return ApiResponse.success(
                 message="Response updated successfully"
@@ -421,7 +371,7 @@ class RatingAnalyticsService:
         """Get overall rating statistics"""
         from django.db.models import Count, Avg, Q
 
-        ratings = MenuItemRating.objects.filter(
+        ratings = MenuItemReview.objects.filter(
             menu_item__chain_id=chain_id,
             is_approved=True,
             created_at__gte=timezone.now() - timezone.timedelta(days=days)

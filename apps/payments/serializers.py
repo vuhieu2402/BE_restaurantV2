@@ -37,16 +37,21 @@ class PaymentSerializer(serializers.ModelSerializer):
     """
     payment_method_info = serializers.SerializerMethodField()
     order_info = serializers.SerializerMethodField()
+    reservation_info = serializers.SerializerMethodField()
+    payment_type = serializers.SerializerMethodField()
     status_display = serializers.CharField(source='get_status_display', read_only=True)
     amount_display = serializers.SerializerMethodField()
-    
+
     class Meta:
         model = Payment
         fields = [
             'id',
             'payment_number',
+            'payment_type',
             'order',
             'order_info',
+            'reservation',
+            'reservation_info',
             'customer',
             'payment_method',
             'payment_method_info',
@@ -70,7 +75,11 @@ class PaymentSerializer(serializers.ModelSerializer):
             'id', 'payment_number', 'created_at', 'updated_at',
             'paid_at', 'refunded_at'
         ]
-    
+
+    def get_payment_type(self, obj):
+        """Loại payment: 'order' hoặc 'reservation'"""
+        return obj.payment_type
+
     def get_payment_method_info(self, obj):
         """Lấy thông tin payment method"""
         if obj.payment_method:
@@ -81,7 +90,7 @@ class PaymentSerializer(serializers.ModelSerializer):
                 'requires_online': obj.payment_method.requires_online,
             }
         return None
-    
+
     def get_order_info(self, obj):
         """Lấy thông tin order"""
         if obj.order:
@@ -92,7 +101,20 @@ class PaymentSerializer(serializers.ModelSerializer):
                 'status': obj.order.status,
             }
         return None
-    
+
+    def get_reservation_info(self, obj):
+        """Lấy thông tin reservation"""
+        if obj.reservation:
+            return {
+                'id': obj.reservation.id,
+                'reservation_number': obj.reservation.reservation_number,
+                'reservation_date': str(obj.reservation.reservation_date),
+                'reservation_time': str(obj.reservation.reservation_time),
+                'number_of_guests': obj.reservation.number_of_guests,
+                'status': obj.reservation.status,
+            }
+        return None
+
     def get_amount_display(self, obj):
         """Format hiển thị amount"""
         return f"{obj.amount:,.0f}đ"

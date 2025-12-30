@@ -258,6 +258,34 @@ class Restaurant(TimestampMixin):
         now = timezone.now().time()
         return self.is_open and self.opening_time <= now <= self.closing_time
 
+    def update_rating_stats(self):
+        """
+        Update aggregated rating statistics from RestaurantReview
+        Called automatically when reviews are created/updated/deleted
+        """
+        from apps.ratings.models import RestaurantReview
+        from django.db.models import Avg
+
+        # Get all approved reviews for this restaurant
+        approved_reviews = RestaurantReview.objects.filter(
+            restaurant=self,
+            is_approved=True
+        )
+
+        # Update total reviews count
+        self.total_reviews = approved_reviews.count()
+
+        # Update average rating
+        if self.total_reviews > 0:
+            avg_rating = approved_reviews.aggregate(Avg('rating'))['rating__avg']
+            self.rating = round(avg_rating, 2) if avg_rating else 0
+        else:
+            # Reset if no reviews
+            self.rating = 0
+
+        # Save without triggering signals again
+        self.save(update_fields=['rating', 'total_reviews'])
+
 
 class Table(TimestampMixin):
     """

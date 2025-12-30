@@ -3,12 +3,12 @@ from django.db.models import Count, Avg, Sum, Q, F, Window
 from django.db.models.functions import RowNumber
 from django.utils import timezone
 from datetime import timedelta
-from .models import MenuItemRating, RatingCategory, RatingResponse, RatingHelpful
+from .models import MenuItemReview, ReviewResponse
 from apps.dishes.models import MenuItem
 
 
 class RatingSelector:
-    """Selectors for MenuItemRating queries"""
+    """Selectors for MenuItemReview queries"""
 
     def __init__(self):
         pass
@@ -16,28 +16,28 @@ class RatingSelector:
     def get_rating_by_id(self, rating_id):
         """Get rating by ID with related data"""
         try:
-            return MenuItemRating.objects.select_related(
+            return MenuItemReview.objects.select_related(
                 'menu_item', 'user', 'order_item'
             ).prefetch_related(
                 'responses',
                 'responses__responder'
             ).get(id=rating_id)
-        except MenuItemRating.DoesNotExist:
+        except MenuItemReview.DoesNotExist:
             return None
 
     def get_user_rating_for_item(self, user_id, menu_item_id):
         """Get user's rating for specific menu item"""
         try:
-            return MenuItemRating.objects.get(
+            return MenuItemReview.objects.get(
                 user_id=user_id,
                 menu_item_id=menu_item_id
             )
-        except MenuItemRating.DoesNotExist:
+        except MenuItemReview.DoesNotExist:
             return None
 
     def get_ratings_for_menu_item(self, menu_item_id, filters=None):
         """Get ratings for a specific menu item"""
-        queryset = MenuItemRating.objects.filter(
+        queryset = MenuItemReview.objects.filter(
             menu_item_id=menu_item_id,
             is_approved=True
         ).select_related('user').prefetch_related('responses')
@@ -48,17 +48,13 @@ class RatingSelector:
             if filters.get('verified_only'):
                 queryset = queryset.filter(is_verified_purchase=True)
             if filters.get('has_review'):
-                queryset = queryset.exclude(review_text='')
-            if filters.get('min_helpful'):
-                queryset = queryset.filter(
-                    helpful_count__gte=filters['min_helpful']
-                )
+                queryset = queryset.exclude(content='')
 
         return queryset.order_by('-created_at')
 
     def get_ratings_by_chain(self, chain_id, filters=None, limit=None):
         """Get ratings for all items in a chain"""
-        queryset = MenuItemRating.objects.filter(
+        queryset = MenuItemReview.objects.filter(
             menu_item__chain_id=chain_id,
             is_approved=True
         ).select_related(
@@ -87,7 +83,7 @@ class RatingSelector:
 
     def get_user_ratings(self, user_id, filters=None):
         """Get all ratings by a user"""
-        queryset = MenuItemRating.objects.filter(
+        queryset = MenuItemReview.objects.filter(
             user_id=user_id,
             is_approved=True
         ).select_related('menu_item', 'menu_item__chain')
@@ -99,9 +95,9 @@ class RatingSelector:
                 queryset = queryset.filter(menu_item__chain_id=filters['chain_id'])
             if filters.get('has_review'):
                 if filters['has_review']:
-                    queryset = queryset.exclude(review_text='')
+                    queryset = queryset.exclude(content='')
                 else:
-                    queryset = queryset.filter(review_text='')
+                    queryset = queryset.filter(content='')
             if filters.get('date_from'):
                 queryset = queryset.filter(created_at__gte=filters['date_from'])
             if filters.get('date_to'):
@@ -112,7 +108,7 @@ class RatingSelector:
     def get_recent_ratings(self, days=7, chain_id=None):
         """Get recent ratings within specified days"""
         date_from = timezone.now() - timedelta(days=days)
-        queryset = MenuItemRating.objects.filter(
+        queryset = MenuItemReview.objects.filter(
             created_at__gte=date_from,
             is_approved=True
         ).select_related('menu_item', 'user')
@@ -137,7 +133,7 @@ class RatingSelector:
 
     def get_rating_summary_for_item(self, menu_item_id):
         """Get comprehensive rating summary for a menu item"""
-        ratings = MenuItemRating.objects.filter(
+        ratings = MenuItemReview.objects.filter(
             menu_item_id=menu_item_id,
             is_approved=True
         ).aggregate(
@@ -147,8 +143,6 @@ class RatingSelector:
                 'id',
                 filter=Q(is_verified_purchase=True)
             ),
-            total_helpful=Sum('helpful_count'),
-            total_not_helpful=Sum('not_helpful_count'),
             five_star=Count('id', filter=Q(rating=5)),
             four_star=Count('id', filter=Q(rating=4)),
             three_star=Count('id', filter=Q(rating=3)),
@@ -159,19 +153,14 @@ class RatingSelector:
         total_reviews = ratings['total_reviews'] or 0
         if total_reviews > 0:
             verified_percentage = (ratings['verified_reviews'] / total_reviews) * 100
-            helpful_percentage = (ratings['total_helpful'] /
-                                (ratings['total_helpful'] + ratings['total_not_helpful']) * 100) \
-                               if (ratings['total_helpful'] + ratings['total_not_helpful']) > 0 else 0
         else:
             verified_percentage = 0
-            helpful_percentage = 0
 
         return {
             'average_rating': float(ratings['average_rating'] or 0),
             'total_reviews': total_reviews,
             'verified_reviews': ratings['verified_reviews'] or 0,
             'verified_purchase_percentage': round(verified_percentage, 2),
-            'helpful_percentage': round(helpful_percentage, 2),
             'rating_distribution': {
                 '5_star': ratings['five_star'] or 0,
                 '4_star': ratings['four_star'] or 0,
@@ -185,7 +174,7 @@ class RatingSelector:
         """Get rating trends over time"""
         date_from = timezone.now() - timedelta(days=days)
 
-        ratings = MenuItemRating.objects.filter(
+        ratings = MenuItemReview.objects.filter(
             menu_item__chain_id=chain_id,
             created_at__gte=date_from,
             is_approved=True
@@ -200,23 +189,22 @@ class RatingSelector:
 
     def get_top_reviewers(self, chain_id, limit=10, min_reviews=3):
         """Get users with most reviews in a chain"""
-        return MenuItemRating.objects.filter(
+        return MenuItemReview.objects.filter(
             menu_item__chain_id=chain_id,
             is_approved=True
         ).values('user__username', 'user__first_name', 'user__last_name', 'user__avatar').annotate(
             review_count=Count('id'),
-            avg_rating=Avg('rating'),
-            helpful_count=Sum('helpful_count')
+            avg_rating=Avg('rating')
         ).filter(
             review_count__gte=min_reviews
-        ).order_by('-review_count', '-helpful_count')[:limit]
+        ).order_by('-review_count')[:limit]
 
     def search_ratings(self, chain_id, query, filters=None):
         """Search ratings by review text"""
-        queryset = MenuItemRating.objects.filter(
+        queryset = MenuItemReview.objects.filter(
             menu_item__chain_id=chain_id,
             is_approved=True,
-            review_text__icontains=query
+            content__icontains=query
         ).select_related('menu_item', 'user')
 
         if filters:
@@ -229,7 +217,7 @@ class RatingSelector:
 
     def get_ratings_needing_moderation(self, chain_id=None):
         """Get ratings that need moderation"""
-        queryset = MenuItemRating.objects.filter(
+        queryset = MenuItemReview.objects.filter(
             is_approved=False
         ).select_related('menu_item', 'user')
 
@@ -243,7 +231,7 @@ class RatingSelector:
         try:
             menu_item = MenuItem.objects.get(id=menu_item_id)
 
-            ratings = MenuItemRating.objects.filter(
+            ratings = MenuItemReview.objects.filter(
                 menu_item_id=menu_item_id,
                 is_approved=True
             )
@@ -331,26 +319,26 @@ class RatingCategorySelector:
             return None
 
 
-class RatingResponseSelector:
-    """Selectors for RatingResponse queries"""
+class ReviewResponseSelector:
+    """Selectors for ReviewResponse queries"""
 
     def get_responses_for_rating(self, rating_id):
         """Get all responses for a rating"""
-        return RatingResponse.objects.filter(
-            rating_id=rating_id,
+        return ReviewResponse.objects.filter(
+            review_id=rating_id,
             is_public=True
         ).select_related('responder').order_by('created_at')
 
     def get_responses_by_user(self, user_id, filters=None):
         """Get responses by a user"""
-        queryset = RatingResponse.objects.filter(
+        queryset = ReviewResponse.objects.filter(
             responder_id=user_id
-        ).select_related('rating', 'rating__menu_item')
+        ).select_related('review', 'review__menu_item')
 
         if filters:
             if filters.get('is_public') is not None:
                 queryset = queryset.filter(is_public=filters['is_public'])
             if filters.get('rating_id'):
-                queryset = queryset.filter(rating_id=filters['rating_id'])
+                queryset = queryset.filter(review_id=filters['rating_id'])
 
         return queryset.order_by('-created_at')

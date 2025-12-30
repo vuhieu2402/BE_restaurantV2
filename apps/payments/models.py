@@ -58,8 +58,18 @@ class Payment(TimestampMixin):
     order = models.OneToOneField(
         'orders.Order',
         on_delete=models.CASCADE,
+        null=True,
+        blank=True,
         related_name='payment',
         help_text="Đơn hàng"
+    )
+    reservation = models.OneToOneField(
+        'reservations.Reservation',
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name='payment',
+        help_text="Đặt bàn (payment là cọc cho reservation)"
     )
     customer = models.ForeignKey(
         'users.User',
@@ -140,7 +150,26 @@ class Payment(TimestampMixin):
     # Ghi chú
     notes = models.TextField(blank=True, null=True, help_text="Ghi chú")
     failure_reason = models.TextField(blank=True, null=True, help_text="Lý do thất bại")
-    
+
+    def clean(self):
+        """
+        Validate rằng payment liên kết với order HOẶC reservation (không cả hai, không không có)
+        """
+        from django.core.exceptions import ValidationError
+
+        has_order = bool(self.order_id)
+        has_reservation = bool(self.reservation_id)
+
+        if not has_order and not has_reservation:
+            raise ValidationError({
+                '__all__': 'Payment phải liên kết với Order hoặc Reservation.'
+            })
+
+        if has_order and has_reservation:
+            raise ValidationError({
+                '__all__': 'Payment không thể liên kết với cả Order và Reservation cùng lúc.'
+            })
+
     class Meta:
         db_table = 'payments'
         verbose_name = 'Thanh toán'
@@ -158,6 +187,8 @@ class Payment(TimestampMixin):
     
     def save(self, *args, **kwargs):
         """Tự động tạo payment_number nếu chưa có"""
+        # Validate before saving
+        self.full_clean()
         if not self.payment_number:
             from django.utils import timezone
             import random
@@ -165,12 +196,21 @@ class Payment(TimestampMixin):
             random_num = random.randint(1000, 9999)
             self.payment_number = f"PAY{timestamp}{random_num}"
         super().save(*args, **kwargs)
-    
+
+    @property
+    def payment_type(self):
+        """Loại payment: 'order' hoặc 'reservation'"""
+        if self.order_id:
+            return 'order'
+        elif self.reservation_id:
+            return 'reservation'
+        return None
+
     @property
     def is_successful(self):
         """Kiểm tra thanh toán thành công"""
         return self.status == 'completed'
-    
+
     @property
     def is_pending(self):
         """Kiểm tra đang chờ thanh toán"""

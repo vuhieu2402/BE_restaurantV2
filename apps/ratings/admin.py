@@ -1,25 +1,23 @@
 from django.contrib import admin
-from .models import MenuItemRating, RatingCategory, RatingResponse
+from .models import MenuItemReview, ReviewResponse
 
 
-@admin.register(MenuItemRating)
-class MenuItemRatingAdmin(admin.ModelAdmin):
-    """Admin configuration for MenuItemRating"""
+@admin.register(MenuItemReview)
+class MenuItemReviewAdmin(admin.ModelAdmin):
+    """Admin configuration for MenuItemReview"""
     list_display = [
         'menu_item', 'user', 'rating', 'is_verified_purchase',
-        'is_approved', 'helpful_count', 'created_at'
+        'is_approved', 'created_at'
     ]
     list_filter = [
         'rating', 'is_verified_purchase', 'is_approved',
-        'created_at', 'menu_item__restaurant'
+        'created_at'
     ]
     search_fields = [
-        'menu_item__name', 'user__username', 'user__email',
-        'review_text'
+        'menu_item__name', 'user__username', 'user__email', 'content'
     ]
     readonly_fields = [
-        'helpful_count', 'not_helpful_count', 'ip_address',
-        'created_at', 'updated_at'
+        'ip_address', 'created_at', 'updated_at'
     ]
 
     fieldsets = (
@@ -27,13 +25,10 @@ class MenuItemRatingAdmin(admin.ModelAdmin):
             'fields': ('menu_item', 'user', 'order_item', 'rating')
         }),
         ('Review Content', {
-            'fields': ('review_text', 'review_images')
+            'fields': ('content',)
         }),
         ('Moderation', {
-            'fields': ('is_verified_purchase', 'is_approved', 'moderation_notes')
-        }),
-        ('Engagement', {
-            'fields': ('helpful_count', 'not_helpful_count')
+            'fields': ('is_verified_purchase', 'is_approved')
         }),
         ('Metadata', {
             'fields': ('ip_address', 'created_at', 'updated_at'),
@@ -47,41 +42,29 @@ class MenuItemRatingAdmin(admin.ModelAdmin):
     def get_queryset(self, request):
         return super().get_queryset(request).select_related(
             'menu_item', 'user', 'order_item'
-        ).prefetch_related('menu_item__restaurant')
+        )
 
 
-@admin.register(RatingCategory)
-class RatingCategoryAdmin(admin.ModelAdmin):
-    """Admin configuration for RatingCategory"""
-    list_display = ['name', 'code', 'is_active', 'display_order']
-    list_filter = ['is_active', 'created_at']
-    search_fields = ['name', 'code', 'description']
-    list_editable = ['is_active', 'display_order']
-
-    prepopulated_fields = {'code': ('name',)}
-
-
-@admin.register(RatingResponse)
-class RatingResponseAdmin(admin.ModelAdmin):
-    """Admin configuration for RatingResponse"""
+@admin.register(ReviewResponse)
+class ReviewResponseAdmin(admin.ModelAdmin):
+    """Admin configuration for ReviewResponse"""
     list_display = [
-        'rating', 'responder', 'is_public', 'created_at'
+        'review', 'responder', 'is_public', 'created_at'
     ]
     list_filter = [
-        'is_public', 'created_at', 'rating__menu_item__restaurant'
+        'is_public', 'created_at'
     ]
     search_fields = [
-        'rating__menu_item__name', 'responder__username',
-        'response_text'
+        'review__menu_item__name', 'responder__username', 'content'
     ]
     readonly_fields = ['created_at', 'updated_at']
 
     fieldsets = (
         ('Response Information', {
-            'fields': ('rating', 'responder', 'is_public')
+            'fields': ('review', 'responder', 'is_public')
         }),
         ('Response Content', {
-            'fields': ('response_text',)
+            'fields': ('content',)
         }),
         ('Timestamps', {
             'fields': ('created_at', 'updated_at'),
@@ -89,5 +72,5 @@ class RatingResponseAdmin(admin.ModelAdmin):
         })
     )
 
-    raw_id_fields = ['rating', 'responder']
+    raw_id_fields = ['review', 'responder']
     date_hierarchy = 'created_at'

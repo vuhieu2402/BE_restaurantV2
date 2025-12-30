@@ -718,9 +718,13 @@ class TableService:
                 # Get created data via selector
                 created_table = self.selector.get_table_by_id(table.id)
 
+                # Serialize table data
+                from .serializers import TableListSerializer
+                serializer = TableListSerializer(created_table)
+
                 return {
                     'success': True,
-                    'data': created_table,
+                    'data': serializer.data,
                     'message': 'Table created successfully'
                 }
 

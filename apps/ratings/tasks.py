@@ -54,28 +54,14 @@ if CELERY_AVAILABLE:
             return update_menu_item_rating_stats(menu_item_id)
 
 
-@shared_task
-def cleanup_old_rating_helpful_votes():
-    """
-    Cleanup old helpful votes to prevent database bloat
-    Remove votes older than 1 year
-    """
-    from datetime import timedelta
-    from django.utils import timezone
-    from .models import RatingHelpful
-
-    try:
-        one_year_ago = timezone.now() - timedelta(days=365)
-        deleted_count, _ = RatingHelpful.objects.filter(
-            created_at__lt=one_year_ago
-        ).delete()
-        return f"Deleted {deleted_count} old helpful votes"
-    except Exception as e:
-        import logging
-        logger = logging.getLogger(__name__)
-        logger.error(f"Error cleaning up old helpful votes: {str(e)}")
-        return f"Error: {str(e)}"
-
+# TODO: Remove this task - helpful votes feature has been removed
+# @shared_task
+# def cleanup_old_rating_helpful_votes():
+#     """
+#     Cleanup old helpful votes to prevent database bloat
+#     Remove votes older than 1 year
+#     """
+#     pass
 
 @shared_task
 def calculate_rating_trends(chain_id, days=30):
@@ -103,13 +89,13 @@ def send_rating_notifications():
         from datetime import timedelta
         from django.utils import timezone
         from django.contrib.auth import get_user_model
-        from .models import MenuItemRating
+        from .models import MenuItemReview
         from django.core.mail import send_mail
         from django.conf import settings
 
         # Get ratings from the last 24 hours
         yesterday = timezone.now() - timedelta(days=1)
-        recent_ratings = MenuItemRating.objects.filter(
+        recent_ratings = MenuItemReview.objects.filter(
             created_at__gte=yesterday,
             is_approved=True
         ).select_related('menu_item', 'menu_item__chain')
@@ -139,7 +125,7 @@ def send_rating_notifications():
                     for rating in ratings:
                         message += f"""
                         • {rating.menu_item.name}: {rating.rating}★
-                          Review: {rating.review_text[:100]}{'...' if len(rating.review_text) > 100 else ''}
+                          Review: {rating.content[:100]}{'...' if len(rating.content) > 100 else ''}
                           By: {rating.user.get_full_name() or rating.user.username}
                         """
 

@@ -8,15 +8,15 @@ from apps.api.mixins import StandardResponseMixin
 from apps.api.pagination import StandardPageNumberPagination
 from apps.api.response import ApiResponse
 from .serializers import (
-    MenuItemRatingSerializer,
-    MenuItemRatingCreateSerializer,
-    MenuItemRatingSummarySerializer,
-    RatingResponseSerializer,
-    RatingHelpfulSerializer,
-    RatingReportSerializer
+    MenuItemReviewSerializer,
+    MenuItemReviewCreateSerializer,
+    MenuItemReviewSummarySerializer,
+    ReviewResponseSerializer,
+    ReviewResponseCreateSerializer
 )
-from .services import RatingService, RatingResponseService, RatingAnalyticsService
+from .services import RatingService, ReviewResponseService, RatingAnalyticsService
 from .selectors import RatingSelector
+from .models import MenuItemReview
 
 
 class MenuItemRatingView(StandardResponseMixin, APIView):
@@ -63,7 +63,7 @@ class MenuItemRatingView(StandardResponseMixin, APIView):
                 description='Items per page'
             ),
         ],
-        responses={200: MenuItemRatingSerializer(many=True)}
+        responses={200: MenuItemReviewSerializer(many=True)}
     )
     def get(self, request, chain_id, item_id):
         """Get ratings for a specific menu item"""
@@ -96,13 +96,13 @@ class MenuItemRatingView(StandardResponseMixin, APIView):
             page = paginator.paginate_queryset(ratings, request)
 
             if page is not None:
-                serializer = MenuItemRatingSerializer(
+                serializer = MenuItemReviewSerializer(
                     page, many=True, context={'request': request}
                 )
                 return paginator.get_paginated_response(serializer.data)
 
             # Fallback for non-paginated response
-            serializer = MenuItemRatingSerializer(
+            serializer = MenuItemReviewSerializer(
                 ratings, many=True, context={'request': request}
             )
             return ApiResponse.success(
@@ -120,8 +120,8 @@ class MenuItemRatingView(StandardResponseMixin, APIView):
         tags=['Menu Ratings'],
         summary="Create/update menu item rating",
         description="Create a new rating or update existing rating for a menu item",
-        request=MenuItemRatingCreateSerializer,
-        responses={201: MenuItemRatingSerializer}
+        request=MenuItemReviewCreateSerializer,
+        responses={201: MenuItemReviewSerializer}
     )
     def post(self, request, chain_id, item_id):
         """Create or update a rating for a menu item"""
@@ -145,19 +145,18 @@ class MenuItemRatingView(StandardResponseMixin, APIView):
             rating_data = {
                 'menu_item': menu_item.id,
                 'rating': request.data.get('rating'),
-                'review_text': request.data.get('review_text', ''),
-                'review_images': request.data.get('review_images', [])
+                'content': request.data.get('content') or request.data.get('review_text', '')
             }
 
             # Validate rating data using serializer
-            serializer = MenuItemRatingCreateSerializer(
+            serializer = MenuItemReviewCreateSerializer(
                 data=rating_data,
                 context={'request': request}
             )
             if not serializer.is_valid():
                 return ApiResponse.bad_request(
                     message="Validation failed",
-                    data=serializer.errors
+                    errors=serializer.errors
                 )
 
             # Create/update rating using service
@@ -187,7 +186,7 @@ class MenuItemRatingDetailView(StandardResponseMixin, APIView):
         tags=['Menu Ratings'],
         summary="Get specific rating",
         description="Get detailed information about a specific rating",
-        responses={200: MenuItemRatingSerializer}
+        responses={200: MenuItemReviewSerializer}
     )
     def get(self, request, chain_id, item_id, rating_id):
         """Get specific rating details"""
@@ -210,7 +209,7 @@ class MenuItemRatingDetailView(StandardResponseMixin, APIView):
                     message="This rating is not yet approved"
                 )
 
-            serializer = MenuItemRatingSerializer(
+            serializer = MenuItemReviewSerializer(
                 rating, context={'request': request}
             )
             return ApiResponse.success(
@@ -228,8 +227,8 @@ class MenuItemRatingDetailView(StandardResponseMixin, APIView):
         tags=['Menu Ratings'],
         summary="Update rating",
         description="Update an existing rating (owner only)",
-        request=MenuItemRatingCreateSerializer,
-        responses={200: MenuItemRatingSerializer}
+        request=MenuItemReviewCreateSerializer,
+        responses={200: MenuItemReviewSerializer}
     )
     def put(self, request, chain_id, item_id, rating_id):
         """Update an existing rating"""
@@ -260,19 +259,18 @@ class MenuItemRatingDetailView(StandardResponseMixin, APIView):
             # Prepare update data
             rating_data = {
                 'rating': request.data.get('rating', rating.rating),
-                'review_text': request.data.get('review_text', rating.review_text),
-                'review_images': request.data.get('review_images', rating.review_images)
+                'content': request.data.get('content') or request.data.get('review_text', rating.content)
             }
 
             # Validate rating data
-            serializer = MenuItemRatingCreateSerializer(
+            serializer = MenuItemReviewCreateSerializer(
                 data=rating_data,
                 context={'request': request}
             )
             if not serializer.is_valid():
                 return ApiResponse.bad_request(
                     message="Validation failed",
-                    data=serializer.errors
+                    errors=serializer.errors
                 )
 
             # Update rating using service
@@ -329,7 +327,7 @@ class MenuItemRatingSummaryView(StandardResponseMixin, APIView):
         tags=['Menu Ratings'],
         summary="Get menu item rating summary",
         description="Get comprehensive rating summary for a menu item",
-        responses={200: MenuItemRatingSummarySerializer}
+        responses={200: MenuItemReviewSummarySerializer}
     )
     def get(self, request, chain_id, item_id):
         """Get rating summary for a menu item"""
@@ -348,16 +346,16 @@ class MenuItemRatingSummaryView(StandardResponseMixin, APIView):
 
             # Get recent reviews
             recent_filters = {'verified_only': request.query_params.get('verified_only', '').lower() == 'true'}
-            recent_ratings = rating_selector.get_ratings_for_menu_item(item_id, recent_filters)[:5]
+            # recent_ratings = rating_selector.get_ratings_for_menu_item(item_id, recent_filters)[:5]
 
             # Get top positive and critical reviews
-            positive_ratings = rating_selector.get_ratings_for_menu_item(
-                item_id, {'rating': 5}
-            )[:3]
+            # positive_ratings = rating_selector.get_ratings_for_menu_item(
+            #     item_id, {'rating': 5}
+            # )[:3]
 
-            critical_ratings = rating_selector.get_ratings_for_menu_item(
-                item_id, {'rating': 1}
-            )[:3]
+            # critical_ratings = rating_selector.get_ratings_for_menu_item(
+            #     item_id, {'rating': 1}
+            # )[:3]
 
             response_data = {
                 'average_rating': summary['average_rating'],
@@ -365,15 +363,15 @@ class MenuItemRatingSummaryView(StandardResponseMixin, APIView):
                 'verified_reviews': summary['verified_reviews'],
                 'verified_purchase_percentage': summary['verified_purchase_percentage'],
                 'rating_distribution': summary['rating_distribution'],
-                'recent_reviews': MenuItemRatingSerializer(
-                    recent_ratings, many=True, context={'request': request}
-                ).data,
-                'top_positive_reviews': MenuItemRatingSerializer(
-                    positive_ratings, many=True, context={'request': request}
-                ).data,
-                'top_critical_reviews': MenuItemRatingSerializer(
-                    critical_ratings, many=True, context={'request': request}
-                ).data
+                # 'recent_reviews': MenuItemReviewSerializer(
+                #     recent_ratings, many=True, context={'request': request}
+                # ).data,
+                # 'top_positive_reviews': MenuItemReviewSerializer(
+                #     positive_ratings, many=True, context={'request': request}
+                # ).data,
+                # 'top_critical_reviews': MenuItemReviewSerializer(
+                #     critical_ratings, many=True, context={'request': request}
+                # ).data
             }
 
             return ApiResponse.success(
@@ -388,77 +386,24 @@ class MenuItemRatingSummaryView(StandardResponseMixin, APIView):
             )
 
 
-class RatingInteractionView(StandardResponseMixin, APIView):
-    """
-    POST /api/chains/{chain_id}/menu-items/{item_id}/ratings/{rating_id}/helpful/ - Mark as helpful
-    POST /api/chains/{chain_id}/menu-items/{item_id}/ratings/{rating_id}/report/ - Report rating
-    """
-    permission_classes = [permissions.IsAuthenticated]
-
-    @extend_schema(
-        tags=['Menu Ratings'],
-        summary="Mark rating as helpful/not helpful",
-        description="Mark a rating as helpful or not helpful",
-        request=RatingHelpfulSerializer,
-        responses={200: dict}
-    )
-    def post(self, request, chain_id, item_id, rating_id, action):
-        """Handle rating interactions (helpful/report)"""
-        try:
-            rating_selector = RatingSelector()
-            rating = rating_selector.get_rating_by_id(rating_id)
-
-            if not rating:
-                return ApiResponse.not_found(message="Rating not found")
-
-            # Validate rating belongs to the specified item and chain
-            if rating.menu_item_id != item_id or rating.menu_item.chain_id != chain_id:
-                return ApiResponse.bad_request(
-                    message="Rating does not belong to this menu item"
-                )
-
-            rating_service = RatingService()
-
-            if action == 'helpful':
-                serializer = RatingHelpfulSerializer(
-                    data=request.data,
-                    context={'request': request, 'rating': rating}
-                )
-                if not serializer.is_valid():
-                    return ApiResponse.bad_request(
-                        message="Validation failed",
-                        data=serializer.errors
-                    )
-
-                return rating_service.mark_rating_helpful(
-                    request.user, rating_id, serializer.validated_data['is_helpful']
-                )
-
-            elif action == 'report':
-                serializer = RatingReportSerializer(
-                    data=request.data,
-                    context={'request': request, 'rating': rating}
-                )
-                if not serializer.is_valid():
-                    return ApiResponse.bad_request(
-                        message="Validation failed",
-                        data=serializer.errors
-                    )
-
-                return rating_service.report_rating(
-                    request.user, rating_id, serializer.validated_data
-                )
-
-            else:
-                return ApiResponse.bad_request(
-                    message="Invalid action. Use 'helpful' or 'report'"
-                )
-
-        except Exception as e:
-            return ApiResponse.error(
-                message=f"Error processing rating interaction: {str(e)}",
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR
-            )
+# TODO: Remove this view - helpful voting and reporting features have been removed
+# class RatingInteractionView(StandardResponseMixin, APIView):
+#     """
+#     POST /api/chains/{chain_id}/menu-items/{item_id}/ratings/{rating_id}/helpful/ - Mark as helpful
+#     POST /api/chains/{chain_id}/menu-items/{item_id}/ratings/{rating_id}/report/ - Report rating
+#     """
+#     permission_classes = [permissions.IsAuthenticated]
+#
+#     @extend_schema(
+#         tags=['Menu Ratings'],
+#         summary="Mark rating as helpful/not helpful",
+#         description="Mark a rating as helpful or not helpful",
+#         request=RatingHelpfulSerializer,
+#         responses={200: dict}
+#     )
+#     def post(self, request, chain_id, item_id, rating_id, action):
+#         """Handle rating interactions (helpful/report)"""
+#         pass
 
 
 class UserRatingsView(StandardResponseMixin, APIView):
@@ -504,7 +449,7 @@ class UserRatingsView(StandardResponseMixin, APIView):
                 description='Items per page'
             ),
         ],
-        responses={200: MenuItemRatingSerializer(many=True)}
+        responses={200: MenuItemReviewSerializer(many=True)}
     )
     def get(self, request):
         """Get current user's ratings"""
@@ -528,13 +473,13 @@ class UserRatingsView(StandardResponseMixin, APIView):
             page = paginator.paginate_queryset(ratings, request)
 
             if page is not None:
-                serializer = MenuItemRatingSerializer(
+                serializer = MenuItemReviewSerializer(
                     page, many=True, context={'request': request}
                 )
                 return paginator.get_paginated_response(serializer.data)
 
             # Fallback for non-paginated response
-            serializer = MenuItemRatingSerializer(
+            serializer = MenuItemReviewSerializer(
                 ratings, many=True, context={'request': request}
             )
             return ApiResponse.success(

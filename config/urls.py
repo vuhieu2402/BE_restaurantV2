@@ -42,6 +42,9 @@ urlpatterns = [
     # Restaurant Management API
     path('api/restaurants/', include('apps.restaurants.urls')),
 
+    # Reservations Management API
+    path('api/reservations/', include('apps.reservations.urls')),
+
     # Dishes/Menu Management API
     path('api/restaurants/', include('apps.dishes.urls')),
 

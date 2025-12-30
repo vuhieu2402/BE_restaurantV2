@@ -316,6 +316,61 @@ class MenuItem(TimestampMixin):
             return int(((self.original_price - self.price) / self.original_price) * 100)
         return 0
 
+    def update_rating_stats(self):
+        """
+        Update aggregated rating statistics from MenuItemReview
+        Called automatically when reviews are created/updated/deleted
+        """
+        from apps.ratings.models import MenuItemReview
+
+        # Get all approved reviews for this menu item
+        approved_reviews = MenuItemReview.objects.filter(
+            menu_item=self,
+            is_approved=True
+        )
+
+        # Update total reviews count
+        self.total_reviews = approved_reviews.count()
+
+        # Update average rating
+        if self.total_reviews > 0:
+            avg_rating = approved_reviews.aggregate(Avg('rating'))['rating__avg']
+            self.rating = round(avg_rating, 2) if avg_rating else 0
+
+            # Update rating distribution
+            rating_counts = {}
+            for i in range(1, 6):
+                count = approved_reviews.filter(rating=i).count()
+                rating_counts[f'{i}_star'] = count
+
+            self.rating_distribution = rating_counts
+
+            # Update last rated at
+            latest_review = approved_reviews.order_by('-created_at').first()
+            if latest_review:
+                self.last_rated_at = latest_review.created_at
+
+            # Update verified purchase percentage
+            verified_count = approved_reviews.filter(is_verified_purchase=True).count()
+            self.verified_purchase_percentage = round(
+                (verified_count / self.total_reviews) * 100, 2
+            )
+        else:
+            # Reset if no reviews
+            self.rating = 0
+            self.rating_distribution = {}
+            self.last_rated_at = None
+            self.verified_purchase_percentage = 0
+
+        # Save without triggering signals again
+        super().save(update_fields=[
+            'rating',
+            'total_reviews',
+            'rating_distribution',
+            'last_rated_at',
+            'verified_purchase_percentage'
+        ])
+
 
 class MenuItemImage(TimestampMixin):
     """
@@ -355,6 +410,8 @@ class MenuItemImage(TimestampMixin):
         indexes = [
             models.Index(fields=['menu_item', 'display_order']),
         ]
+
+
 
     def __str__(self):
         menu_item_name = self.menu_item.name if self.menu_item else "Unknown"

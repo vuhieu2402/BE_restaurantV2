@@ -5,11 +5,11 @@ Django signals for ratings app
 from django.db.models.signals import post_save, post_delete
 from django.dispatch import receiver
 from django.db.models import Count, Avg, Q
-from .models import MenuItemRating, RatingResponse
+from .models import MenuItemReview, ReviewResponse
 from .tasks import update_menu_item_rating_stats
 
 
-@receiver(post_save, sender=MenuItemRating)
+@receiver(post_save, sender=MenuItemReview)
 def rating_created_or_updated(sender, instance, created, **kwargs):
     """
     Handle rating creation and updates
@@ -23,7 +23,7 @@ def rating_created_or_updated(sender, instance, created, **kwargs):
         pass
 
 
-@receiver(post_delete, sender=MenuItemRating)
+@receiver(post_delete, sender=MenuItemReview)
 def rating_deleted(sender, instance, **kwargs):
     """
     Handle rating deletion
@@ -32,7 +32,7 @@ def rating_deleted(sender, instance, **kwargs):
     update_menu_item_rating_stats(instance.menu_item_id)
 
 
-@receiver(post_save, sender=RatingResponse)
+@receiver(post_save, sender=ReviewResponse)
 def response_created(sender, instance, created, **kwargs):
     """
     Handle rating response creation
