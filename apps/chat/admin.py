@@ -89,3 +89,12 @@ class MessageAdmin(admin.ModelAdmin):
             return obj.content[:100] + "..."
         return obj.content
     content_preview.short_description = "Preview Nội dung"
+
+
+# Import analytics admin for Django admin site
+from apps.chat.admin_analytics import (
+    ChatbotFeedbackAdmin,
+    ChatbotAnalyticsAdmin,
+    RecommendationInteractionAdmin,
+    ChatbotSessionAdmin,
+)

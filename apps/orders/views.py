@@ -368,3 +368,88 @@ class OrderCancelView(StandardResponseMixin, APIView):
             data=order_serializer.data,
             message=result['message']
         )
+
+
+class AllOrdersListView(StandardResponseMixin, APIView):
+    """
+    GET /api/orders/all/
+    Lấy danh sách tất cả đơn hàng với filters theo thời gian và phân trang
+    """
+    permission_classes = [permissions.IsAuthenticated]
+    
+    def __init__(self):
+        super().__init__()
+        self.order_selector = OrderSelector()
+    
+    @extend_schema(
+        tags=['Orders'],
+        summary="List all orders",
+        description="Lấy danh sách tất cả đơn hàng với filters theo thời gian và phân trang",
+        parameters=[
+            OpenApiParameter(name='date', description='Filter theo ngày cụ thể (YYYY-MM-DD)', required=False, type=str),
+            OpenApiParameter(name='week', description='Filter theo tuần trong năm (1-52)', required=False, type=int),
+            OpenApiParameter(name='month', description='Filter theo tháng (1-12)', required=False, type=int),
+            OpenApiParameter(name='year', description='Filter theo năm', required=False, type=int),
+            OpenApiParameter(name='date_from', description='Ngày bắt đầu (YYYY-MM-DD)', required=False, type=str),
+            OpenApiParameter(name='date_to', description='Ngày kết thúc (YYYY-MM-DD)', required=False, type=str),
+            OpenApiParameter(name='status', description='Filter theo trạng thái', required=False, type=str),
+            OpenApiParameter(name='order_type', description='Filter theo loại đơn hàng', required=False, type=str),
+            OpenApiParameter(name='restaurant_id', description='Filter theo chi nhánh', required=False, type=int),
+            OpenApiParameter(name='chain_id', description='Filter theo chuỗi nhà hàng', required=False, type=int),
+            OpenApiParameter(name='customer_id', description='Filter theo khách hàng', required=False, type=int),
+            OpenApiParameter(name='page', description='Page number', required=False, type=int),
+            OpenApiParameter(name='page_size', description='Page size', required=False, type=int),
+        ],
+        responses={200: OrderListSerializer(many=True)}
+    )
+    def get(self, request):
+        """List all orders with time filters and pagination"""
+        # Build filters from query params
+        filters = {}
+        
+        # Time filters
+        if request.query_params.get('date'):
+            filters['date'] = request.query_params.get('date')
+        
+        if request.query_params.get('week'):
+            filters['week'] = request.query_params.get('week')
+        
+        if request.query_params.get('month'):
+            filters['month'] = request.query_params.get('month')
+        
+        if request.query_params.get('year'):
+            filters['year'] = request.query_params.get('year')
+        
+        if request.query_params.get('date_from'):
+            filters['date_from'] = request.query_params.get('date_from')
+        
+        if request.query_params.get('date_to'):
+            filters['date_to'] = request.query_params.get('date_to')
+        
+        # Other filters
+        if request.query_params.get('status'):
+            filters['status'] = request.query_params.get('status')
+        
+        if request.query_params.get('order_type'):
+            filters['order_type'] = request.query_params.get('order_type')
+        
+        if request.query_params.get('restaurant_id'):
+            filters['restaurant_id'] = request.query_params.get('restaurant_id')
+        
+        if request.query_params.get('chain_id'):
+            filters['chain_id'] = request.query_params.get('chain_id')
+        
+        if request.query_params.get('customer_id'):
+            filters['customer_id'] = request.query_params.get('customer_id')
+        
+        # Get orders
+        orders = self.order_selector.get_all_orders(filters=filters)
+        
+        # Paginate
+        paginator = OrderPagination()
+        paginated_orders = paginator.paginate_queryset(orders, request)
+        
+        # Serialize
+        serializer = OrderListSerializer(paginated_orders, many=True)
+        
+        return paginator.get_paginated_response(serializer.data)

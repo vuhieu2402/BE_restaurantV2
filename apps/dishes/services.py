@@ -301,6 +301,208 @@ class CategoryService:
 
         return processed_categories
 
+    def create_category_by_chain(self, chain_id, category_data, user=None):
+        """
+        Create category cho chain với validation và business rules
+        """
+        try:
+            with transaction.atomic():
+                # Validate business rules
+                validation_errors = self._validate_category_data_by_chain(chain_id, category_data)
+                if validation_errors:
+                    return {
+                        'success': False,
+                        'message': 'Validation failed',
+                        'errors': validation_errors
+                    }
+
+                # Add chain_id to category_data
+                category_data['chain_id'] = chain_id
+
+                # Create category
+                category = Category.objects.create(**category_data)
+
+                # Get created data via selector
+                created_category = self.selector.get_category_by_id(category.id)
+
+                return {
+                    'success': True,
+                    'data': created_category,
+                    'message': 'Category created successfully'
+                }
+
+        except Exception as e:
+            logger.error(f"Error creating category for chain: {str(e)}")
+            return {
+                'success': False,
+                'message': f'Error creating category: {str(e)}'
+            }
+
+    def update_category_by_chain(self, category_id, update_data, user=None):
+        """
+        Update category cho chain với validation và business rules
+        """
+        try:
+            with transaction.atomic():
+                # Get category via selector
+                category = self.selector.get_category_by_id(category_id)
+                if not category:
+                    return {
+                        'success': False,
+                        'message': 'Category not found'
+                    }
+
+                # Validate category belongs to chain
+                if not category.chain_id:
+                    return {
+                        'success': False,
+                        'message': 'Category does not belong to a chain'
+                    }
+
+                # Validate business rules
+                validation_errors = self._validate_update_data_by_chain(category, update_data)
+                if validation_errors:
+                    return {
+                        'success': False,
+                        'message': 'Validation failed',
+                        'errors': validation_errors
+                    }
+
+                # Update category
+                for field, value in update_data.items():
+                    if hasattr(category, field):
+                        setattr(category, field, value)
+                category.save()
+
+                # Get updated data via selector
+                updated_category = self.selector.get_category_by_id(category.id)
+
+                return {
+                    'success': True,
+                    'data': updated_category,
+                    'message': 'Category updated successfully'
+                }
+
+        except Exception as e:
+            logger.error(f"Error updating category for chain: {str(e)}")
+            return {
+                'success': False,
+                'message': f'Error updating category: {str(e)}'
+            }
+
+    def delete_category_by_chain(self, category_id, user=None):
+        """
+        Delete category cho chain với business rules validation
+        """
+        try:
+            with transaction.atomic():
+                # Get category via selector
+                category = self.selector.get_category_by_id(category_id)
+                if not category:
+                    return {
+                        'success': False,
+                        'message': 'Category not found'
+                    }
+
+                # Validate category belongs to chain
+                if not category.chain_id:
+                    return {
+                        'success': False,
+                        'message': 'Category does not belong to a chain'
+                    }
+
+                # Validate business rules for delete
+                if not self._can_delete_category(category):
+                    return {
+                        'success': False,
+                        'message': 'Cannot delete category with existing menu items'
+                    }
+
+                # Soft delete
+                category.is_active = False
+                category.save()
+
+                return {
+                    'success': True,
+                    'message': 'Category deleted successfully'
+                }
+
+        except Exception as e:
+            logger.error(f"Error deleting category for chain: {str(e)}")
+            return {
+                'success': False,
+                'message': f'Error deleting category: {str(e)}'
+            }
+
+    def get_categories_by_chain_with_business_logic(self, chain_id, filters):
+        """
+        Get categories cho chain với filtering và business logic (READ)
+        """
+        try:
+            # Get data via selector
+            categories = self.selector.get_categories_by_chain(chain_id, filters)
+
+            # Apply business logic processing
+            processed_data = self._process_category_data(categories)
+
+            return {
+                'success': True,
+                'data': processed_data,
+                'message': 'Categories retrieved successfully'
+            }
+
+        except Exception as e:
+            logger.error(f"Error retrieving categories for chain: {str(e)}")
+            return {
+                'success': False,
+                'message': f'Error retrieving categories: {str(e)}'
+            }
+
+    def _validate_category_data_by_chain(self, chain_id, data):
+        """
+        Private method cho category business validation cho chain
+        """
+        errors = {}
+
+        # Check if category name already exists for this chain
+        if data.get('name') and self.selector.check_category_name_exists_by_chain(chain_id, data['name']):
+            errors['name'] = 'Category with this name already exists for this chain'
+
+        # Check if slug already exists for this chain
+        if data.get('slug') and self.selector.check_category_slug_exists_by_chain(chain_id, data['slug']):
+            errors['slug'] = 'Slug already exists for this chain'
+
+        # Validate display order
+        if data.get('display_order') and data['display_order'] < 0:
+            errors['display_order'] = 'Display order must be non-negative'
+
+        return errors
+
+    def _validate_update_data_by_chain(self, category, update_data):
+        """
+        Validate business rules cho category update cho chain
+        """
+        errors = {}
+
+        # Check unique constraints except current record
+        if 'name' in update_data:
+            if self.selector.check_category_name_exists_by_chain(
+                category.chain_id, update_data['name'], category.id
+            ):
+                errors['name'] = 'Category with this name already exists for this chain'
+
+        if 'slug' in update_data:
+            if self.selector.check_category_slug_exists_by_chain(
+                category.chain_id, update_data['slug'], category.id
+            ):
+                errors['slug'] = 'Slug already exists for this chain'
+
+        # Validate display order
+        if 'display_order' in update_data and update_data['display_order'] < 0:
+            errors['display_order'] = 'Display order must be non-negative'
+
+        return errors
+
 
 class MenuItemService:
     """
@@ -410,6 +612,41 @@ class MenuItemService:
                         # Convert 1/0 to True/False
                         normalized_data[field] = bool(value)
                 
+                # Normalize DecimalField values (price, original_price)
+                from decimal import Decimal, InvalidOperation
+                decimal_fields = ['price', 'original_price']
+                for field in decimal_fields:
+                    if field in normalized_data and normalized_data[field] is not None:
+                        value = normalized_data[field]
+                        
+                        # Handle list values (e.g., ['50000'] -> '50000')
+                        if isinstance(value, list):
+                            value = value[0] if value else None
+                        
+                        # Handle empty string
+                        if value == '' or (isinstance(value, str) and value.strip() == ''):
+                            if field == 'price':
+                                return {
+                                    'success': False,
+                                    'message': f'{field} is required',
+                                    'errors': {field: f'{field} cannot be empty'}
+                                }
+                            else:
+                                normalized_data[field] = None
+                            continue
+                        
+                        # Convert to Decimal
+                        try:
+                            if isinstance(value, str):
+                                value = value.strip()
+                            normalized_data[field] = Decimal(str(value))
+                        except (ValueError, TypeError, InvalidOperation):
+                            return {
+                                'success': False,
+                                'message': f'Invalid {field} value',
+                                'errors': {field: f'{field} must be a valid number. Received: {value}'}
+                            }
+                
                 # Validate business rules
                 validation_errors = self._validate_menu_item_data(restaurant_id, normalized_data)
                 if validation_errors:
@@ -515,6 +752,34 @@ class MenuItemService:
                         elif isinstance(value, (int, float)):
                             # Convert 1/0 to True/False
                             normalized_data[field] = bool(value)
+                
+                # Normalize DecimalField values (price, original_price)
+                from decimal import Decimal, InvalidOperation
+                decimal_fields = ['price', 'original_price']
+                for field in decimal_fields:
+                    if field in normalized_data and normalized_data[field] is not None:
+                        value = normalized_data[field]
+                        
+                        # Handle list values (e.g., ['50000'] -> '50000')
+                        if isinstance(value, list):
+                            value = value[0] if value else None
+                        
+                        # Handle empty string
+                        if value == '' or (isinstance(value, str) and value.strip() == ''):
+                            normalized_data[field] = None
+                            continue
+                        
+                        # Convert to Decimal
+                        try:
+                            if isinstance(value, str):
+                                value = value.strip()
+                            normalized_data[field] = Decimal(str(value))
+                        except (ValueError, TypeError, InvalidOperation):
+                            return {
+                                'success': False,
+                                'message': f'Invalid {field} value',
+                                'errors': {field: f'{field} must be a valid number. Received: {value}'}
+                            }
 
                 # Validate business rules
                 validation_errors = self._validate_update_data(menu_item, normalized_data)
@@ -1017,3 +1282,431 @@ class MenuItemService:
             processed_items.append(item_data)
 
         return processed_items
+
+    def create_menu_item_by_chain(self, chain_id, menu_item_data, user=None):
+        """
+        Create menu item cho chain với validation và business rules
+        """
+        try:
+            with transaction.atomic():
+                # Normalize data: handle empty string/list values from multipart/form-data
+                normalized_data = {}
+                for key, value in menu_item_data.items():
+                    # Handle list values from multipart/form-data
+                    if isinstance(value, list):
+                        if len(value) > 0 and value[0] and str(value[0]).strip():
+                            normalized_data[key] = value[0]
+                        else:
+                            # Empty list or list with empty string -> set to None for optional fields
+                            normalized_data[key] = None
+                    else:
+                        # Handle empty strings
+                        if value == '' or (isinstance(value, str) and value.strip() == ''):
+                            # For optional fields, set to None; for required fields with defaults, use default
+                            if key in ['preparation_time', 'calories', 'display_order', 'original_price']:
+                                normalized_data[key] = None if key in ['preparation_time', 'calories', 'original_price'] else 0
+                            else:
+                                normalized_data[key] = None
+                        else:
+                            normalized_data[key] = value
+                
+                # Normalize integer fields
+                for field in ['preparation_time', 'calories', 'display_order']:
+                    if field in normalized_data and normalized_data[field] is not None:
+                        try:
+                            normalized_data[field] = int(normalized_data[field])
+                        except (ValueError, TypeError):
+                            normalized_data[field] = None if field != 'display_order' else 0
+                    elif field == 'display_order' and field not in normalized_data:
+                        normalized_data[field] = 0  # Default value
+                
+                # Normalize category field (ForeignKey)
+                if 'category' in normalized_data:
+                    category_value = normalized_data.get('category')
+                    
+                    # Handle list values (e.g., ['1'] -> '1')
+                    if isinstance(category_value, list):
+                        category_value = category_value[0] if category_value else None
+                    
+                    # Convert empty/zero values to None
+                    if category_value == 0 or category_value == '0' or category_value == '' or category_value is None:
+                        normalized_data['category'] = None
+                    else:
+                        # Convert to integer if it's a string number
+                        try:
+                            category_id = int(category_value)
+                            # Validate that category exists and belongs to chain
+                            category_selector = CategorySelector()
+                            category = category_selector.get_category_by_id(category_id)
+                            if not category or category.chain_id != chain_id:
+                                return {
+                                    'success': False,
+                                    'message': f'Category with ID {category_id} does not exist or does not belong to this chain',
+                                    'errors': {'category': f'Category with ID {category_id} not found'}
+                                }
+                            normalized_data['category_id'] = category_id
+                            # Remove 'category' key and use 'category_id' for ForeignKey assignment
+                            normalized_data.pop('category', None)
+                        except (ValueError, TypeError):
+                            return {
+                                'success': False,
+                                'message': 'Invalid category ID format',
+                                'errors': {'category': 'Category must be a valid category ID'}
+                            }
+                
+                # Normalize BooleanField values (is_available, is_featured, is_vegetarian, is_spicy)
+                boolean_fields = ['is_available', 'is_featured', 'is_vegetarian', 'is_spicy']
+                for field in boolean_fields:
+                    value = normalized_data.get(field)
+                    
+                    # Skip if field not provided (will use model default)
+                    if field not in normalized_data or value is None:
+                        continue
+                    
+                    # Handle string boolean values from multipart/form-data
+                    if isinstance(value, str):
+                        value_lower = value.lower().strip()
+                        if value_lower in ['true', '1', 'yes', 'on']:
+                            normalized_data[field] = True
+                        elif value_lower in ['false', '0', 'no', 'off', '']:
+                            normalized_data[field] = False
+                        else:
+                            return {
+                                'success': False,
+                                'message': f'Invalid {field} value. Must be true/false.',
+                                'errors': {field: f'{field} must be true or false. Received: {value}'}
+                            }
+                    elif isinstance(value, bool):
+                        # Already boolean, keep as is
+                        normalized_data[field] = value
+                    elif isinstance(value, (int, float)):
+                        # Convert 1/0 to True/False
+                        normalized_data[field] = bool(value)
+                
+                # Normalize DecimalField values (price, original_price)
+                from decimal import Decimal, InvalidOperation
+                decimal_fields = ['price', 'original_price']
+                for field in decimal_fields:
+                    if field in normalized_data and normalized_data[field] is not None:
+                        value = normalized_data[field]
+                        
+                        # Handle list values (e.g., ['50000'] -> '50000')
+                        if isinstance(value, list):
+                            value = value[0] if value else None
+                        
+                        # Handle empty string
+                        if value == '' or (isinstance(value, str) and value.strip() == ''):
+                            if field == 'price':
+                                return {
+                                    'success': False,
+                                    'message': f'{field} is required',
+                                    'errors': {field: f'{field} cannot be empty'}
+                                }
+                            else:
+                                normalized_data[field] = None
+                            continue
+                        
+                        # Convert to Decimal
+                        try:
+                            if isinstance(value, str):
+                                value = value.strip()
+                            normalized_data[field] = Decimal(str(value))
+                        except (ValueError, TypeError, InvalidOperation):
+                            return {
+                                'success': False,
+                                'message': f'Invalid {field} value',
+                                'errors': {field: f'{field} must be a valid number. Received: {value}'}
+                            }
+                
+                # Validate business rules
+                validation_errors = self._validate_menu_item_data_by_chain(chain_id, normalized_data)
+                if validation_errors:
+                    return {
+                        'success': False,
+                        'message': 'Validation failed',
+                        'errors': validation_errors
+                    }
+
+                # Add chain_id to normalized_data
+                normalized_data['chain_id'] = chain_id
+
+                # Create menu item
+                menu_item = MenuItem.objects.create(**normalized_data)
+
+                # Get created data via selector
+                created_item = self.selector.get_menu_item_by_id(menu_item.id)
+
+                return {
+                    'success': True,
+                    'data': created_item,
+                    'message': 'Menu item created successfully'
+                }
+
+        except Exception as e:
+            logger.error(f"Error creating menu item for chain: {str(e)}")
+            return {
+                'success': False,
+                'message': f'Error creating menu item: {str(e)}'
+            }
+
+    def update_menu_item_by_chain(self, menu_item_id, update_data, user=None):
+        """
+        Update menu item cho chain với validation và business rules
+        """
+        try:
+            with transaction.atomic():
+                # Get menu item via selector
+                menu_item = self.selector.get_menu_item_by_id(menu_item_id)
+                if not menu_item:
+                    return {
+                        'success': False,
+                        'message': 'Menu item not found'
+                    }
+
+                # Validate menu item belongs to chain
+                if not menu_item.chain_id:
+                    return {
+                        'success': False,
+                        'message': 'Menu item does not belong to a chain'
+                    }
+
+                # Normalize data: handle category field (ForeignKey)
+                normalized_data = update_data.copy()
+                if 'category' in normalized_data:
+                    category_value = normalized_data.get('category')
+                    
+                    # Handle list values (e.g., ['1'] -> '1')
+                    if isinstance(category_value, list):
+                        category_value = category_value[0] if category_value else None
+                    
+                    # Convert empty/zero values to None
+                    if category_value == 0 or category_value == '0' or category_value == '' or category_value is None:
+                        normalized_data['category'] = None
+                    else:
+                        # Convert to integer if it's a string number
+                        try:
+                            category_id = int(category_value)
+                            # Validate that category exists and belongs to chain
+                            category_selector = CategorySelector()
+                            category = category_selector.get_category_by_id(category_id)
+                            if not category or category.chain_id != menu_item.chain_id:
+                                return {
+                                    'success': False,
+                                    'message': f'Category with ID {category_id} does not exist or does not belong to this chain',
+                                    'errors': {'category': f'Category with ID {category_id} not found'}
+                                }
+                            normalized_data['category_id'] = category_id
+                            # Remove 'category' key and use 'category_id' for ForeignKey assignment
+                            normalized_data.pop('category', None)
+                        except (ValueError, TypeError):
+                            return {
+                                'success': False,
+                                'message': 'Invalid category ID format',
+                                'errors': {'category': 'Category must be a valid category ID'}
+                            }
+
+                # Normalize BooleanField values (is_available, is_featured, is_vegetarian, is_spicy)
+                boolean_fields = ['is_available', 'is_featured', 'is_vegetarian', 'is_spicy']
+                for field in boolean_fields:
+                    if field in normalized_data:
+                        value = normalized_data.get(field)
+                        
+                        # Handle string boolean values from multipart/form-data
+                        if isinstance(value, str):
+                            value_lower = value.lower().strip()
+                            if value_lower in ['true', '1', 'yes', 'on']:
+                                normalized_data[field] = True
+                            elif value_lower in ['false', '0', 'no', 'off', '']:
+                                normalized_data[field] = False
+                            else:
+                                return {
+                                    'success': False,
+                                    'message': f'Invalid {field} value. Must be true/false.',
+                                    'errors': {field: f'{field} must be true or false. Received: {value}'}
+                                }
+                        elif isinstance(value, bool):
+                            # Already boolean, keep as is
+                            normalized_data[field] = value
+                        elif isinstance(value, (int, float)):
+                            # Convert 1/0 to True/False
+                            normalized_data[field] = bool(value)
+                
+                # Normalize DecimalField values (price, original_price)
+                from decimal import Decimal, InvalidOperation
+                decimal_fields = ['price', 'original_price']
+                for field in decimal_fields:
+                    if field in normalized_data and normalized_data[field] is not None:
+                        value = normalized_data[field]
+                        
+                        # Handle list values (e.g., ['50000'] -> '50000')
+                        if isinstance(value, list):
+                            value = value[0] if value else None
+                        
+                        # Handle empty string
+                        if value == '' or (isinstance(value, str) and value.strip() == ''):
+                            normalized_data[field] = None
+                            continue
+                        
+                        # Convert to Decimal
+                        try:
+                            if isinstance(value, str):
+                                value = value.strip()
+                            normalized_data[field] = Decimal(str(value))
+                        except (ValueError, TypeError, InvalidOperation):
+                            return {
+                                'success': False,
+                                'message': f'Invalid {field} value',
+                                'errors': {field: f'{field} must be a valid number. Received: {value}'}
+                            }
+
+                # Validate business rules
+                validation_errors = self._validate_update_data_by_chain(menu_item, normalized_data)
+                if validation_errors:
+                    return {
+                        'success': False,
+                        'message': 'Validation failed',
+                        'errors': validation_errors
+                    }
+
+                # Update menu item
+                for field, value in update_data.items():
+                    if hasattr(menu_item, field):
+                        setattr(menu_item, field, value)
+                menu_item.save()
+
+                # Get updated data via selector
+                updated_item = self.selector.get_menu_item_by_id(menu_item.id)
+
+                return {
+                    'success': True,
+                    'data': updated_item,
+                    'message': 'Menu item updated successfully'
+                }
+
+        except Exception as e:
+            logger.error(f"Error updating menu item for chain: {str(e)}")
+            return {
+                'success': False,
+                'message': f'Error updating menu item: {str(e)}'
+            }
+
+    def delete_menu_item_by_chain(self, menu_item_id, user=None):
+        """
+        Delete menu item cho chain với business rules validation
+        """
+        try:
+            with transaction.atomic():
+                # Get menu item via selector
+                menu_item = self.selector.get_menu_item_by_id(menu_item_id)
+                if not menu_item:
+                    return {
+                        'success': False,
+                        'message': 'Menu item not found'
+                    }
+
+                # Validate menu item belongs to chain
+                if not menu_item.chain_id:
+                    return {
+                        'success': False,
+                        'message': 'Menu item does not belong to a chain'
+                    }
+
+                # Validate business rules for delete
+                if not self._can_delete_menu_item(menu_item):
+                    return {
+                        'success': False,
+                        'message': 'Cannot delete menu item due to business constraints'
+                    }
+
+                # Soft delete - set is_available to False
+                menu_item.is_available = False
+                menu_item.save()
+
+                return {
+                    'success': True,
+                    'message': 'Menu item deleted successfully'
+                }
+
+        except Exception as e:
+            logger.error(f"Error deleting menu item for chain: {str(e)}")
+            return {
+                'success': False,
+                'message': f'Error deleting menu item: {str(e)}'
+            }
+
+    def get_menu_items_by_chain_with_business_logic(self, chain_id, filters):
+        """
+        Get menu items cho chain với filtering và business logic (READ)
+        """
+        try:
+            # Get data via selector
+            queryset = self.selector.get_menu_items_by_chain(chain_id, filters)
+
+            # Apply business logic processing
+            processed_data = self._process_menu_item_data(queryset)
+
+            return {
+                'success': True,
+                'data': processed_data,
+                'message': 'Menu items retrieved successfully'
+            }
+
+        except Exception as e:
+            logger.error(f"Error retrieving menu items for chain: {str(e)}")
+            return {
+                'success': False,
+                'message': f'Error retrieving menu items: {str(e)}'
+            }
+
+    def _validate_menu_item_data_by_chain(self, chain_id, data):
+        """
+        Private method cho menu item business validation cho chain
+        """
+        errors = {}
+
+        # Check if menu item name already exists for this chain
+        if data.get('name') and self.selector.check_menu_item_name_exists_by_chain(chain_id, data['name']):
+            errors['name'] = 'Menu item with this name already exists for this chain'
+
+        # Check if slug already exists for this chain
+        if data.get('slug') and self.selector.check_menu_item_slug_exists_by_chain(chain_id, data['slug']):
+            errors['slug'] = 'Slug already exists for this chain'
+
+        # Validate price
+        if data.get('price') and data['price'] <= 0:
+            errors['price'] = 'Price must be greater than 0'
+
+        # Validate display order
+        if data.get('display_order') and data['display_order'] < 0:
+            errors['display_order'] = 'Display order must be non-negative'
+
+        return errors
+
+    def _validate_update_data_by_chain(self, menu_item, update_data):
+        """
+        Validate business rules cho menu item update cho chain
+        """
+        errors = {}
+
+        # Check unique constraints except current record
+        if 'name' in update_data:
+            if self.selector.check_menu_item_name_exists_by_chain(
+                menu_item.chain_id, update_data['name'], menu_item.id
+            ):
+                errors['name'] = 'Menu item with this name already exists for this chain'
+
+        if 'slug' in update_data:
+            if self.selector.check_menu_item_slug_exists_by_chain(
+                menu_item.chain_id, update_data['slug'], menu_item.id
+            ):
+                errors['slug'] = 'Slug already exists for this chain'
+
+        # Validate price
+        if 'price' in update_data and update_data['price'] <= 0:
+            errors['price'] = 'Price must be greater than 0'
+
+        # Validate display order
+        if 'display_order' in update_data and update_data['display_order'] < 0:
+            errors['display_order'] = 'Display order must be non-negative'
+
+        return errors

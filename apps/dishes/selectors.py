@@ -126,6 +126,32 @@ class CategorySelector:
             queryset = queryset.exclude(id=exclude_id)
         return queryset.exists()
 
+    def check_category_name_exists_by_chain(self, chain_id, name, exclude_id=None):
+        """
+        Check if category name exists for chain (SELECT ONLY)
+        """
+        queryset = Category.objects.filter(
+            chain_id=chain_id,
+            name=name,
+            is_active=True
+        )
+        if exclude_id:
+            queryset = queryset.exclude(id=exclude_id)
+        return queryset.exists()
+
+    def check_category_slug_exists_by_chain(self, chain_id, slug, exclude_id=None):
+        """
+        Check if category slug exists for chain (SELECT ONLY)
+        """
+        queryset = Category.objects.filter(
+            chain_id=chain_id,
+            slug=slug,
+            is_active=True
+        )
+        if exclude_id:
+            queryset = queryset.exclude(id=exclude_id)
+        return queryset.exists()
+
     def count_categories(self, restaurant_id):
         """
         Count categories for restaurant (SELECT ONLY)
@@ -438,6 +464,32 @@ class MenuItemSelector:
         """
         queryset = MenuItem.objects.filter(
             restaurant_id=restaurant_id,
+            slug=slug,
+            is_available=True
+        )
+        if exclude_id:
+            queryset = queryset.exclude(id=exclude_id)
+        return queryset.exists()
+
+    def check_menu_item_name_exists_by_chain(self, chain_id, name, exclude_id=None):
+        """
+        Check if menu item name exists for chain (SELECT ONLY)
+        """
+        queryset = MenuItem.objects.filter(
+            chain_id=chain_id,
+            name=name,
+            is_available=True
+        )
+        if exclude_id:
+            queryset = queryset.exclude(id=exclude_id)
+        return queryset.exists()
+
+    def check_menu_item_slug_exists_by_chain(self, chain_id, slug, exclude_id=None):
+        """
+        Check if menu item slug exists for chain (SELECT ONLY)
+        """
+        queryset = MenuItem.objects.filter(
+            chain_id=chain_id,
             slug=slug,
             is_available=True
         )

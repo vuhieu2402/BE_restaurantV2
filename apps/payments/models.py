@@ -187,14 +187,16 @@ class Payment(TimestampMixin):
     
     def save(self, *args, **kwargs):
         """Tự động tạo payment_number nếu chưa có"""
-        # Validate before saving
-        self.full_clean()
+        # Generate payment_number BEFORE validation
         if not self.payment_number:
             from django.utils import timezone
             import random
             timestamp = timezone.now().strftime('%Y%m%d%H%M%S')
             random_num = random.randint(1000, 9999)
             self.payment_number = f"PAY{timestamp}{random_num}"
+
+        # Validate after payment_number is generated
+        self.full_clean()
         super().save(*args, **kwargs)
 
     @property

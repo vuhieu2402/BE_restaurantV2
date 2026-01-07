@@ -31,12 +31,14 @@ def notify_restaurant_on_new_order(sender, instance, created, **kwargs):
         order_info = {
             'order_number': instance.order_number,
             'order_type': instance.get_order_type_display(),
-            'total': instance.total,
+            'total': float(instance.total),
             'customer_phone': instance.delivery_phone or (instance.customer.phone_number if instance.customer else 'N/A'),
             'delivery_address': instance.delivery_address or 'N/A',
             'restaurant_name': restaurant.name,
+            'restaurant_id': restaurant.id,
             'assignment_method': instance.get_assignment_method_display(),
             'distance': f"{instance.assignment_distance} km" if instance.assignment_distance else 'N/A',
+            'created_at': instance.created_at.isoformat(),
         }
         
         # Log thông báo
@@ -57,8 +59,8 @@ def notify_restaurant_on_new_order(sender, instance, created, **kwargs):
         # 3. Push notification (tích hợp sau)
         # send_push_notification(restaurant.manager, order_info)
         
-        # 4. WebSocket/Real-time notification (tích hợp sau)
-        # send_realtime_notification(restaurant.id, order_info)
+        # 4. WebSocket/Real-time notification
+        send_realtime_notification(restaurant.id, order_info)
         
     except Exception as e:
         logger.error(f"Lỗi khi gửi thông báo đơn hàng {instance.order_number}: {str(e)}")
@@ -100,6 +102,44 @@ def send_email_notification(email, order_info):
         
     except Exception as e:
         logger.error(f"Lỗi khi gửi email: {str(e)}")
+
+
+def send_realtime_notification(restaurant_id, order_info):
+    """
+    Gửi thông báo qua WebSocket cho nhân viên
+    
+    Args:
+        restaurant_id: ID của restaurant
+        order_info: Dict chứa thông tin đơn hàng
+    """
+    try:
+        from channels.layers import get_channel_layer
+        from asgiref.sync import async_to_sync
+        
+        channel_layer = get_channel_layer()
+        
+        # Gửi thông báo đến group của restaurant cụ thể
+        async_to_sync(channel_layer.group_send)(
+            f'orders_restaurant_{restaurant_id}',
+            {
+                'type': 'new_order',
+                'order': order_info
+            }
+        )
+        
+        # Gửi thông báo đến group tất cả orders (cho admin)
+        async_to_sync(channel_layer.group_send)(
+            'orders_all',
+            {
+                'type': 'new_order',
+                'order': order_info
+            }
+        )
+        
+        logger.info(f"Đã gửi WebSocket thông báo cho restaurant {restaurant_id}")
+        
+    except Exception as e:
+        logger.error(f"Lỗi khi gửi WebSocket thông báo: {str(e)}")
 
 
 @receiver(post_save, sender=Order)

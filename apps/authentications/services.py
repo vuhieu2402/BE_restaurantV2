@@ -297,7 +297,7 @@ class AuthService:
                 session = RefreshTokenSessionSelector.get_session_by_refresh_token(refresh_token)
 
                 if session:
-                    if session.is_revoked:
+                    if not session.is_active:
                         return {
                             'success': False,
                             'message': 'Session đã được đăng xuất trước đó'
@@ -308,7 +308,7 @@ class AuthService:
                         'success': True,
                         'message': 'Đăng xuất thành công',
                         'data': {
-                            'device_name': session.device_name,
+                            'device_name': session.device_info.get('name', 'Unknown Device'),
                             'logged_out_at': timezone.now()
                         }
                     }

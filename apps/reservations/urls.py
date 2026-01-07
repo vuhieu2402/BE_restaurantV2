@@ -12,6 +12,7 @@ from .views import (
     ReservationUpdateStatusView,
     ReservationSuccessView,
     ReservationPaymentReturnView,
+    TableStatusView,
 )
 
 app_name = 'reservations'
@@ -37,6 +38,9 @@ urlpatterns = [
 
     # Cancel reservation (customer)
     path('<int:reservation_id>/cancel/', ReservationCancelView.as_view(), name='cancel'),
+
+    # Check table status
+    path('tables/status/', TableStatusView.as_view(), name='table-status'),
 
     # Success page
     path('success/', ReservationSuccessView.as_view(), name='success'),

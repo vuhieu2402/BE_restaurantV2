@@ -9,6 +9,7 @@ from .views import (
     OrderDetailView,
     OrderUpdateStatusView,
     OrderCancelView,
+    AllOrdersListView,
 )
 
 app_name = 'orders'
@@ -20,7 +21,10 @@ urlpatterns = [
     # Checkout - tạo order từ cart
     path('checkout/', OrderCheckoutView.as_view(), name='checkout'),
     
-    # List orders
+    # List all orders with time filters
+    path('all/', AllOrdersListView.as_view(), name='all'),
+    
+    # List orders of current user
     path('', OrderListView.as_view(), name='list'),
     
     # Order detail

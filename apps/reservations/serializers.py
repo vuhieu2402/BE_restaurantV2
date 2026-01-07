@@ -420,3 +420,20 @@ class ReservationCancelSerializer(serializers.Serializer):
             )
 
         return attrs
+
+
+class TableStatusSerializer(serializers.Serializer):
+    """
+    Serializer cho trạng thái bàn theo thời gian
+    """
+    table_id = serializers.IntegerField()
+    table_number = serializers.CharField()
+    floor = serializers.IntegerField()
+    section = serializers.CharField(allow_null=True)
+    capacity = serializers.IntegerField()
+    current_status = serializers.CharField()
+    status_display = serializers.CharField()
+    is_available = serializers.BooleanField()
+    reservations = serializers.ListField(child=serializers.DictField())
+    x_position = serializers.DecimalField(max_digits=10, decimal_places=2, allow_null=True)
+    y_position = serializers.DecimalField(max_digits=10, decimal_places=2, allow_null=True)

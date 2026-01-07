@@ -47,6 +47,7 @@ app.conf.update(
         'apps.notifications.tasks.*': {'queue': 'notifications'},
         'apps.analytics.tasks.*': {'queue': 'analytics'},
         'apps.orders.tasks.*': {'queue': 'orders'},
+        'apps.chat.tasks.*': {'queue': 'chatbot'},
     },
 
     # Queue definitions
@@ -71,6 +72,10 @@ app.conf.update(
         'orders': {
             'exchange': 'orders',
             'routing_key': 'orders',
+        },
+        'chatbot': {
+            'exchange': 'chatbot',
+            'routing_key': 'chatbot',
         },
     },
 
@@ -121,6 +126,12 @@ app.conf.update(
         'send-reservation-reminders': {
             'task': 'apps.reservations.tasks.send_reservation_reminders',
             'schedule': crontab(minute='*/30'),  # Every 30 minutes
+        },
+
+        # Clean up old chatbot conversation contexts (daily at 2 AM)
+        'cleanup-old-chatbot-contexts': {
+            'task': 'apps.chat.tasks.cleanup_old_conversation_context',
+            'schedule': crontab(minute=0, hour=2),  # 2:00 AM daily
         },
     },
 

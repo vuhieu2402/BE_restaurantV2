@@ -86,9 +86,14 @@ SERVER_EMAIL = DEFAULT_FROM_EMAIL
 # EMAIL_HOST_USER = config('EMAIL_HOST_USER', default='')
 # EMAIL_HOST_PASSWORD = config('EMAIL_HOST_PASSWORD', default='')
 
+# ==================== LOGGING DIRECTORY ====================
+# Tạo thư mục logs nếu chưa tồn tại
+LOGS_DIR = BASE_DIR / 'logs'
+LOGS_DIR.mkdir(exist_ok=True)
+
 # ==================== DEVELOPMENT LOGGING ====================
-# Logging đơn giản - chỉ hiển thị trên console
-# Không cần ghi file khi đang phát triển
+# Logging với cả console và file - ghi logs để debug
+# File logging giúp theo dõi lịch sử API calls
 
 LOGGING = {
     'version': 1,
@@ -103,6 +108,11 @@ LOGGING = {
             'format': '{levelname} {message}',
             'style': '{',
         },
+        'detailed': {
+            'format': '{levelname} {asctime} [{name}] {module}:{funcName}:{lineno}\n{message}',
+            'style': '{',
+            'datefmt': '%Y-%m-%d %H:%M:%S',
+        },
     },
     'handlers': {
         'console': {
@@ -110,65 +120,92 @@ LOGGING = {
             'class': 'logging.StreamHandler',
             'formatter': 'verbose',
         },
+        # File handler - ghi tất cả logs vào file
+        'file': {
+            'level': 'DEBUG',
+            'class': 'logging.handlers.RotatingFileHandler',
+            'filename': LOGS_DIR / 'django.log',
+            'maxBytes': 1024 * 1024 * 10,  # 10MB
+            'backupCount': 5,
+            'formatter': 'verbose',
+        },
+        # Error file handler - chỉ ghi errors và critical
+        'error_file': {
+            'level': 'ERROR',
+            'class': 'logging.handlers.RotatingFileHandler',
+            'filename': LOGS_DIR / 'errors.log',
+            'maxBytes': 1024 * 1024 * 10,  # 10MB
+            'backupCount': 10,
+            'formatter': 'detailed',
+        },
+        # API specific handler - ghi logs từ API app
+        'api_file': {
+            'level': 'DEBUG',
+            'class': 'logging.handlers.RotatingFileHandler',
+            'filename': LOGS_DIR / 'api.log',
+            'maxBytes': 1024 * 1024 * 10,  # 10MB
+            'backupCount': 5,
+            'formatter': 'detailed',
+        },
     },
     'loggers': {
         'django': {
-            'handlers': ['console'],
+            'handlers': ['console', 'file'],
             'level': 'INFO',
             'propagate': False,
         },
         'django.request': {
-            'handlers': ['console'],
+            'handlers': ['console', 'file', 'error_file'],
             'level': 'DEBUG',  # Xem tất cả request errors
             'propagate': False,
         },
         'django.server': {
-            'handlers': ['console'],
+            'handlers': ['console', 'file'],
             'level': 'INFO',
             'propagate': False,
         },
-        # API logger - hiển thị đầy đủ khi develop
+        # API logger - ghi đầy đủ khi develop
         'api': {
-            'handlers': ['console'],
+            'handlers': ['console', 'api_file', 'error_file'],
             'level': 'DEBUG',
             'propagate': False,
         },
         'api.exception_handler': {
-            'handlers': ['console'],
+            'handlers': ['console', 'api_file', 'error_file'],
             'level': 'DEBUG',
             'propagate': False,
         },
         # Tắt DEBUG logs cho các thư viện bên ngoài
         'botocore': {
-            'handlers': ['console'],
-            'level': 'WARNING',  # Chỉ hiển thị warnings và errors
+            'handlers': ['console', 'file'],
+            'level': 'WARNING',
             'propagate': False,
         },
         'boto3': {
-            'handlers': ['console'],
+            'handlers': ['console', 'file'],
             'level': 'WARNING',
             'propagate': False,
         },
         's3transfer': {
-            'handlers': ['console'],
+            'handlers': ['console', 'file'],
             'level': 'WARNING',
             'propagate': False,
         },
         'urllib3': {
-            'handlers': ['console'],
+            'handlers': ['console', 'file'],
             'level': 'WARNING',
             'propagate': False,
         },
-        # Storage logger - chỉ INFO trở lên
+        # Storage logger
         'config.storage': {
-            'handlers': ['console'],
+            'handlers': ['console', 'file'],
             'level': 'INFO',
             'propagate': False,
         },
         # Root logger
         '': {
-            'handlers': ['console'],
-            'level': 'INFO',  # Giảm từ DEBUG xuống INFO
+            'handlers': ['console', 'file'],
+            'level': 'INFO',
         },
     },
 }

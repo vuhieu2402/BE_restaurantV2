@@ -18,6 +18,7 @@ from .serializers import (
     ReservationUpdateStatusSerializer,
     ReservationCancelSerializer,
     ReservationDepositPaymentSerializer,
+    TableStatusSerializer,
 )
 from .services import ReservationService, ReservationDepositService, ReservationSelector
 
@@ -443,3 +444,173 @@ class ReservationPaymentReturnView(APIView):
             'payment_id': payment_id,
         }
         return render(request, 'reservations/deposit_payment_success.html', context)
+
+
+class TableStatusView(StandardResponseMixin, APIView):
+    """
+    GET /api/reservations/tables/status/
+    Check trạng thái của các bàn theo thời gian ngày hiện tại
+    """
+    permission_classes = [permissions.IsAuthenticated]
+
+    @extend_schema(
+        tags=['Reservations'],
+        summary="Check table status by time",
+        description="Kiểm tra trạng thái của các bàn theo thời gian ngày hiện tại",
+        parameters=[
+            OpenApiParameter(
+                name='restaurant_id',
+                description='ID nhà hàng (required)',
+                type=int,
+                required=True
+            ),
+            OpenApiParameter(
+                name='date',
+                description='Ngày cần check (YYYY-MM-DD, default: today)',
+                type=str,
+                required=False
+            ),
+            OpenApiParameter(
+                name='time',
+                description='Giờ cần check (HH:MM, default: current time)',
+                type=str,
+                required=False
+            ),
+        ],
+        responses={200: TableStatusSerializer(many=True)}
+    )
+    def get(self, request):
+        """Check table status by time"""
+        from django.utils import timezone
+        from datetime import datetime, timedelta
+        from apps.restaurants.models import Table, Restaurant
+
+        # Get parameters
+        restaurant_id = request.query_params.get('restaurant_id')
+        date_str = request.query_params.get('date')
+        time_str = request.query_params.get('time')
+
+        # Validate restaurant_id
+        if not restaurant_id:
+            return ApiResponse.validation_error(
+                message="Thiếu restaurant_id"
+            )
+
+        try:
+            restaurant = Restaurant.objects.get(id=restaurant_id, is_active=True)
+        except Restaurant.DoesNotExist:
+            return ApiResponse.not_found(
+                message="Nhà hàng không tồn tại hoặc không hoạt động"
+            )
+
+        # Parse date
+        if date_str:
+            try:
+                check_date = datetime.strptime(date_str, '%Y-%m-%d').date()
+            except ValueError:
+                return ApiResponse.validation_error(
+                    message="Định dạng ngày không hợp lệ (YYYY-MM-DD)"
+                )
+        else:
+            check_date = timezone.now().date()
+
+        # Parse time
+        if time_str:
+            try:
+                check_time = datetime.strptime(time_str, '%H:%M').time()
+            except ValueError:
+                return ApiResponse.validation_error(
+                    message="Định dạng giờ không hợp lệ (HH:MM)"
+                )
+        else:
+            check_time = timezone.now().time()
+
+        # Combine to datetime
+        check_datetime = timezone.make_aware(
+            datetime.combine(check_date, check_time)
+        )
+
+        # Get all tables for the restaurant
+        tables = Table.objects.filter(
+            restaurant=restaurant,
+            is_active=True
+        ).order_by('floor', 'table_number')
+
+        # Get reservations for the date
+        from .models import Reservation
+
+        reservations = Reservation.objects.filter(
+            restaurant=restaurant,
+            reservation_date=check_date,
+            status__in=['pending', 'confirmed']
+        ).select_related('table')
+
+        table_status_list = []
+
+        for table in tables:
+            # Find reservations for this table
+            table_reservations = reservations.filter(table=table)
+
+            # Determine current status based on reservations
+            current_status = 'available'
+            is_available = True
+
+            # Check if table is in maintenance (from table.status)
+            if table.status == 'maintenance':
+                current_status = 'maintenance'
+                is_available = False
+            else:
+                # Check if table is reserved at the check time
+                for reservation in table_reservations:
+                    reservation_datetime = timezone.make_aware(
+                        datetime.combine(reservation.reservation_date, reservation.reservation_time)
+                    )
+
+                    # Assume reservation lasts 2 hours
+                    reservation_end = reservation_datetime + timedelta(hours=2)
+
+                    if reservation_datetime <= check_datetime <= reservation_end:
+                        current_status = 'reserved'
+                        is_available = False
+                        break
+
+            # Build reservation info
+            reservation_info = []
+            for reservation in table_reservations:
+                reservation_datetime = timezone.make_aware(
+                    datetime.combine(reservation.reservation_date, reservation.reservation_time)
+                )
+                reservation_end = reservation_datetime + timedelta(hours=2)
+
+                reservation_info.append({
+                    'reservation_id': reservation.id,
+                    'reservation_number': reservation.reservation_number,
+                    'reservation_time': reservation.reservation_time.strftime('%H:%M'),
+                    'reservation_end': reservation_end.time().strftime('%H:%M'),
+                    'number_of_guests': reservation.number_of_guests,
+                    'status': reservation.status,
+                    'status_display': reservation.get_status_display(),
+                    'contact_name': reservation.contact_name,
+                    'contact_phone': reservation.contact_phone,
+                })
+
+            table_status_list.append({
+                'table_id': table.id,
+                'table_number': table.table_number,
+                'floor': table.floor,
+                'section': table.section,
+                'capacity': table.capacity,
+                'current_status': current_status,
+                'status_display': dict(Table.STATUS_CHOICES).get(current_status, current_status),
+                'is_available': is_available,
+                'reservations': reservation_info,
+                'x_position': table.x_position,
+                'y_position': table.y_position,
+            })
+
+        serializer = TableStatusSerializer(table_status_list, many=True)
+
+        return ApiResponse.success(
+            data=serializer.data,
+            message=f"Lấy trạng thái bàn thành công cho ngày {check_date} lúc {check_time}"
+        )

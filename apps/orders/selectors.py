@@ -245,3 +245,115 @@ class OrderSelector:
         ).order_by('-created_at')
         
         return queryset
+    
+    def get_all_orders(self, filters=None):
+        """
+        Lấy danh sách tất cả orders với filters theo thời gian và các điều kiện khác
+        
+        Args:
+            filters: Dict chứa các filter options {
+                'date': str (YYYY-MM-DD) - Filter theo ngày cụ thể
+                'week': int - Filter theo tuần trong năm
+                'month': int - Filter theo tháng
+                'year': int - Filter theo năm
+                'date_from': date - Ngày bắt đầu
+                'date_to': date - Ngày kết thúc
+                'status': str - Filter theo trạng thái
+                'order_type': str - Filter theo loại đơn hàng
+                'restaurant_id': int - Filter theo chi nhánh
+                'chain_id': int - Filter theo chuỗi nhà hàng
+                'customer_id': int - Filter theo khách hàng
+            }
+        
+        Returns:
+            QuerySet of Orders
+        """
+        from django.utils import timezone
+        from datetime import datetime, timedelta
+        
+        queryset = Order.objects.select_related(
+            'customer',
+            'restaurant',
+            'chain',
+            'table',
+            'assigned_staff'
+        ).prefetch_related(
+            'items'
+        ).order_by('-created_at')
+        
+        if not filters:
+            return queryset
+        
+        # Filter theo thời gian
+        if filters.get('date'):
+            try:
+                date_obj = datetime.strptime(filters['date'], '%Y-%m-%d').date()
+                queryset = queryset.filter(
+                    created_at__date=date_obj
+                )
+            except (ValueError, TypeError):
+                pass
+        
+        elif filters.get('week') and filters.get('year'):
+            try:
+                week = int(filters['week'])
+                year = int(filters['year'])
+                
+                # Tính ngày đầu và cuối của tuần
+                start_date = datetime.strptime(f"{year}-W{week-1}-1", "%Y-W%W-%w").date()
+                end_date = start_date + timedelta(days=6)
+                
+                queryset = queryset.filter(
+                    created_at__date__gte=start_date,
+                    created_at__date__lte=end_date
+                )
+            except (ValueError, TypeError):
+                pass
+        
+        elif filters.get('month') and filters.get('year'):
+            try:
+                month = int(filters['month'])
+                year = int(filters['year'])
+                
+                queryset = queryset.filter(
+                    created_at__year=year,
+                    created_at__month=month
+                )
+            except (ValueError, TypeError):
+                pass
+        
+        elif filters.get('year'):
+            try:
+                year = int(filters['year'])
+                queryset = queryset.filter(created_at__year=year)
+            except (ValueError, TypeError):
+                pass
+        
+        # Filter theo khoảng thời gian
+        if filters.get('date_from'):
+            queryset = queryset.filter(created_at__gte=filters['date_from'])
+        
+        if filters.get('date_to'):
+            queryset = queryset.filter(created_at__lte=filters['date_to'])
+        
+        # Filter theo trạng thái
+        if filters.get('status'):
+            queryset = queryset.filter(status=filters['status'])
+        
+        # Filter theo loại đơn hàng
+        if filters.get('order_type'):
+            queryset = queryset.filter(order_type=filters['order_type'])
+        
+        # Filter theo chi nhánh
+        if filters.get('restaurant_id'):
+            queryset = queryset.filter(restaurant_id=filters['restaurant_id'])
+        
+        # Filter theo chuỗi nhà hàng
+        if filters.get('chain_id'):
+            queryset = queryset.filter(chain_id=filters['chain_id'])
+        
+        # Filter theo khách hàng
+        if filters.get('customer_id'):
+            queryset = queryset.filter(customer_id=filters['customer_id'])
+        
+        return queryset

@@ -48,6 +48,12 @@ urlpatterns = [
     # Dishes/Menu Management API
     path('api/restaurants/', include('apps.dishes.urls')),
 
+    # Chat & Chatbot API
+    path('api/chat/', include('apps.chat.urls')),
+
+    # Analytics API
+    path('api/analytics/', include('apps.analytics.urls')),
+
     # OpenAPI/Swagger Documentation
     path('api/schema/', SpectacularAPIView.as_view(), name='schema'),
     path('api/docs/', SpectacularSwaggerView.as_view(url_name='schema'), name='swagger-ui'),

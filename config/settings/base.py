@@ -28,6 +28,7 @@ INSTALLED_APPS = [
     'drf_spectacular_sidecar',  # Swagger UI static files
     'django_filters',  # Django filter backend
     'corsheaders',  # CORS support
+    'channels',  # WebSocket support
 
     # Local apps
     'apps.users',
@@ -41,7 +42,7 @@ INSTALLED_APPS = [
     'apps.authentications',
     'apps.salary_and_bonus',
     'apps.ratings',
-    'apps.cart'
+    'apps.cart',
 ]
 
 MIDDLEWARE = [
@@ -77,6 +78,19 @@ TEMPLATES = [
 ]
 
 WSGI_APPLICATION = 'config.wsgi.application'
+
+# ASGI application for WebSocket support
+ASGI_APPLICATION = 'config.asgi.application'
+
+# Channels configuration for WebSocket
+CHANNEL_LAYERS = {
+    'default': {
+        'BACKEND': 'channels_redis.core.RedisChannelLayer',
+        'CONFIG': {
+            'hosts': [(config('REDIS_HOST', default='127.0.0.1'), config('REDIS_PORT', default=6379, cast=int))],
+        },
+    },
+}
 
 REST_FRAMEWORK = {
     'EXCEPTION_HANDLER': 'apps.api.exception_handler.custom_exception_handler',
@@ -179,9 +193,9 @@ SPECTACULAR_SETTINGS = {
         {'name': 'Chat', 'description': 'Customer support chat'},
         {'name': 'Analytics', 'description': 'Analytics and reporting'},
     ],
-    # Add static files serving for Swagger UI
-    'SWAGGER_UI_DIST': 'SIDECAR',  # or your preferred CDN
-    'REDOC_DIST': 'SIDECAR',  # or your preferred CDN
+    # Use drf-spectacular-sidecar for local static files (no CDN dependency)
+    'SWAGGER_UI_DIST': 'SIDECAR',  # Use local sidecar static files
+    'REDOC_DIST': 'SIDECAR',  # Use local sidecar static files
 }
 
 

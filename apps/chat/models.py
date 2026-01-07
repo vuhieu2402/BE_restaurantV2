@@ -121,6 +121,7 @@ class Message(TimestampMixin):
         ('image', 'Hình ảnh'),
         ('file', 'File'),
         ('system', 'Hệ thống'),
+        ('chatbot', 'Chatbot'),
     ]
     
     room = models.ForeignKey(
@@ -151,7 +152,30 @@ class Message(TimestampMixin):
         null=True,
         help_text="File đính kèm"
     )
-    
+
+    # Chatbot metadata
+    is_bot_response = models.BooleanField(
+        default=False,
+        help_text="Đây là phản hồi từ chatbot"
+    )
+    intent = models.CharField(
+        max_length=50,
+        blank=True,
+        null=True,
+        help_text="Ý định của tin nhắn"
+    )
+    entities = models.JSONField(
+        blank=True,
+        null=True,
+        default=dict,
+        help_text="Các thực thể được trích xuất"
+    )
+    confidence_score = models.FloatField(
+        blank=True,
+        null=True,
+        help_text="Độ tin cậy của phân loại ý định"
+    )
+
     # Trạng thái
     is_read = models.BooleanField(default=False, help_text="Đã đọc")
     read_at = models.DateTimeField(blank=True, null=True, help_text="Thời gian đọc")
@@ -176,3 +200,52 @@ class Message(TimestampMixin):
             self.is_read = True
             self.read_at = timezone.now()
             self.save(update_fields=['is_read', 'read_at'])
+
+
+class OnlinePresence(TimestampMixin):
+    """
+    Theo dõi trạng thái online của người dùng trong chat
+
+    Tracks which users are online and which chat rooms they are currently viewing.
+    """
+    user = models.ForeignKey(
+        'users.User',
+        on_delete=models.CASCADE,
+        related_name='online_presences',
+        help_text="Người dùng"
+    )
+    room = models.ForeignKey(
+        ChatRoom,
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name='online_presences',
+        help_text="Phòng chat đang hoạt động (null nếu chỉ online chung)"
+    )
+    is_online = models.BooleanField(
+        default=True,
+        help_text="Đang online"
+    )
+    last_seen = models.DateTimeField(
+        auto_now=True,
+        help_text="Lần cuối thấy hoạt động"
+    )
+
+    class Meta:
+        db_table = 'online_presences'
+        verbose_name = 'Online Presence'
+        verbose_name_plural = 'Online Presences'
+        ordering = ['-last_seen']
+        indexes = [
+            models.Index(fields=['user', '-last_seen']),
+            models.Index(fields=['room', '-last_seen']),
+            models.Index(fields=['is_online', '-last_seen']),
+        ]
+
+    def __str__(self):
+        room_info = f" in {self.room.room_number}" if self.room else ""
+        return f"{self.user.username}{room_info} - {'online' if self.is_online else 'offline'}"
+
+
+# Import analytics models for Django migrations
+from apps.chat.models_analytics import ChatbotFeedback, ChatbotAnalytics, RecommendationInteraction, ChatbotSession

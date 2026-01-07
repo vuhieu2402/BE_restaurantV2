@@ -344,6 +344,226 @@ class CategoryReorderView(StandardResponseMixin, APIView):
             )
 
 
+class ChainCategoryListView(StandardResponseMixin, APIView):
+    """
+    GET /api/chains/{chain_id}/categories/ - List chain categories
+    POST /api/chains/{chain_id}/categories/ - Create new category for chain
+    """
+    permission_classes = [permissions.AllowAny]
+
+    @extend_schema(
+        tags=['Dishes'],
+        summary="List chain categories",
+        description="Get paginated list of categories for a specific chain",
+        parameters=[
+            CategorySearchSerializer,
+            {'name': 'page', 'type': 'int', 'required': False, 'in': 'query', 'description': 'Page number'},
+            {'name': 'page_size', 'type': 'int', 'required': False, 'in': 'query', 'description': 'Items per page'}
+        ],
+        responses={200: CategoryListSerializer(many=True)}
+    )
+    def get(self, request, chain_id):
+        try:
+            service = CategoryService()
+            filters = {
+                'search': request.query_params.get('search')
+            }
+
+            filters = {k: v for k, v in filters.items() if v is not None}
+            result = service.get_categories_by_chain_with_business_logic(chain_id, filters)
+
+            if result['success']:
+                try:
+                    paginator = SmallResultsSetPagination()
+                    paginated_data = paginator.paginate_queryset(result['data'], request)
+
+                    if paginated_data is not None:
+                        return paginator.get_paginated_response(paginated_data)
+
+                    return self.success_response(
+                        data=result['data'],
+                        message=result['message']
+                    )
+                except Exception as pagination_error:
+                    return self.success_response(
+                        data=result['data'],
+                        message=result['message'] + " (pagination disabled)"
+                    )
+            else:
+                return self.error_response(message=result['message'])
+
+        except Exception as e:
+            return self.error_response(
+                message=f"Error: {str(e)}",
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+    @extend_schema(
+        tags=['Dishes'],
+        summary="Create category for chain",
+        description="Create new category for chain",
+        request=CategoryCreateSerializer,
+        responses={201: CategorySerializer}
+    )
+    def post(self, request, chain_id):
+        try:
+            required_fields = ['name', 'slug']
+            for field in required_fields:
+                if field not in request.data:
+                    return self.error_response(
+                        message=f"Missing required field: {field}"
+                    )
+
+            service = CategoryService()
+            result = service.create_category_by_chain(chain_id, request.data, request.user)
+
+            if result['success']:
+                serializer = CategorySerializer(result['data'], context={'request': request})
+                return self.created_response(
+                    data=serializer.data,
+                    message=result['message']
+                )
+            else:
+                return self.error_response(
+                    message=result['message'],
+                    errors=result.get('errors')
+                )
+
+        except Exception as e:
+            return self.error_response(
+                message=f"Error: {str(e)}",
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+
+class ChainCategoryDetailView(StandardResponseMixin, APIView):
+    """
+    GET /api/chains/{chain_id}/categories/{category_id}/ - Get category details
+    PUT /api/chains/{chain_id}/categories/{category_id}/ - Update category
+    DELETE /api/chains/{chain_id}/categories/{category_id}/ - Delete category
+    """
+    permission_classes = [permissions.AllowAny]
+
+    @extend_schema(
+        tags=['Dishes'],
+        summary="Get chain category details",
+        description="Get detailed information about a specific category in chain",
+        responses={200: CategoryWithItemsSerializer}
+    )
+    def get(self, request, chain_id, category_id):
+        try:
+            selector = CategorySelector()
+            category = selector.get_category_by_id(category_id)
+
+            if not category:
+                return self.not_found_response(message="Category not found")
+
+            if category.chain_id != int(chain_id):
+                return self.error_response(
+                    message="Category does not belong to this chain"
+                )
+
+            service = CategoryService()
+            categories_with_items = service.get_categories_by_chain_with_business_logic(
+                chain_id, {'search': category.name}
+            )
+
+            if categories_with_items['success']:
+                category_data = None
+                for cat_data in categories_with_items['data']:
+                    if cat_data['id'] == category.id:
+                        category_data = cat_data
+                        break
+
+                if category_data:
+                    return self.success_response(
+                        data=category_data,
+                        message="Category retrieved successfully"
+                    )
+
+            return self.not_found_response(message="Category not found")
+
+        except Exception as e:
+            return self.error_response(
+                message=f"Error: {str(e)}",
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+    @extend_schema(
+        tags=['Dishes'],
+        summary="Update chain category",
+        description="Update category information for chain",
+        request=CategoryUpdateSerializer,
+        responses={200: CategorySerializer}
+    )
+    def put(self, request, chain_id, category_id):
+        try:
+            selector = CategorySelector()
+            category = selector.get_category_by_id(category_id)
+
+            if not category:
+                return self.not_found_response(message="Category not found")
+
+            if category.chain_id != int(chain_id):
+                return self.error_response(
+                    message="Category does not belong to this chain"
+                )
+
+            service = CategoryService()
+            result = service.update_category_by_chain(category_id, request.data, request.user)
+
+            if result['success']:
+                serializer = CategorySerializer(result['data'], context={'request': request})
+                return self.success_response(
+                    data=serializer.data,
+                    message=result['message']
+                )
+            else:
+                return self.error_response(
+                    message=result['message'],
+                    errors=result.get('errors')
+                )
+
+        except Exception as e:
+            return self.error_response(
+                message=f"Error: {str(e)}",
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+    @extend_schema(
+        tags=['Dishes'],
+        summary="Delete chain category",
+        description="Soft delete category for chain",
+        responses={204}
+    )
+    def delete(self, request, chain_id, category_id):
+        try:
+            selector = CategorySelector()
+            category = selector.get_category_by_id(category_id)
+
+            if not category:
+                return self.not_found_response(message="Category not found")
+
+            if category.chain_id != int(chain_id):
+                return self.error_response(
+                    message="Category does not belong to this chain"
+                )
+
+            service = CategoryService()
+            result = service.delete_category_by_chain(category_id, request.user)
+
+            if result['success']:
+                return self.deleted_response(message=result['message'])
+            else:
+                return self.error_response(message=result['message'])
+
+        except Exception as e:
+            return self.error_response(
+                message=f"Error: {str(e)}",
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+
 class MenuItemListView(StandardResponseMixin, ListAPIView):
     """
     GET /api/restaurants/{restaurant_id}/menu-items/ - List restaurant menu items
@@ -623,6 +843,217 @@ class MenuItemUpdateDeleteView(StandardResponseMixin, APIView):
             # ✅ Chỉ gọi service
             service = MenuItemService()
             result = service.delete_menu_item(item_id, request.user)
+
+            if result['success']:
+                return self.deleted_response(message=result['message'])
+            else:
+                return self.error_response(message=result['message'])
+
+        except Exception as e:
+            return self.error_response(
+                message=f"Error: {str(e)}",
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+
+class ChainMenuItemListView(StandardResponseMixin, APIView):
+    """
+    GET /api/chains/{chain_id}/menu-items/ - List chain menu items
+    POST /api/chains/{chain_id}/menu-items/ - Create new menu item for chain
+    """
+    permission_classes = [permissions.AllowAny]
+
+    @extend_schema(
+        tags=['Dishes'],
+        summary="List chain menu items",
+        description="Get paginated list of menu items for a specific chain",
+        parameters=[
+            MenuItemSearchSerializer,
+            {'name': 'page', 'type': 'int', 'required': False, 'in': 'query', 'description': 'Page number'},
+            {'name': 'page_size', 'type': 'int', 'required': False, 'in': 'query', 'description': 'Items per page'}
+        ],
+        responses={200: MenuItemListSerializer(many=True)}
+    )
+    def get(self, request, chain_id):
+        try:
+            service = MenuItemService()
+            filters = {
+                'search': request.query_params.get('search'),
+                'category_id': request.query_params.get('category_id'),
+                'is_available': request.query_params.get('is_available'),
+                'is_featured': request.query_params.get('is_featured'),
+                'min_price': request.query_params.get('min_price'),
+                'max_price': request.query_params.get('max_price')
+            }
+
+            filters = {k: v for k, v in filters.items() if v is not None}
+            result = service.get_menu_items_by_chain_with_business_logic(chain_id, filters)
+
+            if result['success']:
+                try:
+                    paginator = SmallResultsSetPagination()
+                    paginated_data = paginator.paginate_queryset(result['data'], request)
+
+                    if paginated_data is not None:
+                        return paginator.get_paginated_response(paginated_data)
+
+                    return self.success_response(
+                        data=result['data'],
+                        message=result['message']
+                    )
+                except Exception as pagination_error:
+                    return self.success_response(
+                        data=result['data'],
+                        message=result['message'] + " (pagination disabled)"
+                    )
+            else:
+                return self.error_response(message=result['message'])
+
+        except Exception as e:
+            return self.error_response(
+                message=f"Error: {str(e)}",
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+    @extend_schema(
+        tags=['Dishes'],
+        summary="Create menu item for chain",
+        description="Create new menu item for chain",
+        request=MenuItemCreateSerializer,
+        responses={201: MenuItemDetailSerializer}
+    )
+    def post(self, request, chain_id):
+        try:
+            required_fields = ['name', 'slug', 'price', 'category_id']
+            for field in required_fields:
+                if field not in request.data:
+                    return self.error_response(
+                        message=f"Missing required field: {field}"
+                    )
+
+            service = MenuItemService()
+            result = service.create_menu_item_by_chain(chain_id, request.data, request.user)
+
+            if result['success']:
+                serializer = MenuItemDetailSerializer(result['data'], context={'request': request})
+                return self.created_response(
+                    data=serializer.data,
+                    message=result['message']
+                )
+            else:
+                return self.error_response(
+                    message=result['message'],
+                    errors=result.get('errors')
+                )
+
+        except Exception as e:
+            return self.error_response(
+                message=f"Error: {str(e)}",
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+
+class ChainMenuItemDetailView(StandardResponseMixin, APIView):
+    """
+    GET /api/chains/{chain_id}/menu-items/{item_id}/ - Get menu item details
+    PUT /api/chains/{chain_id}/menu-items/{item_id}/ - Update menu item
+    DELETE /api/chains/{chain_id}/menu-items/{item_id}/ - Delete menu item
+    """
+    permission_classes = [permissions.AllowAny]
+
+    @extend_schema(
+        tags=['Dishes'],
+        summary="Get chain menu item details",
+        description="Get detailed information about a specific menu item in chain",
+        responses={200: MenuItemDetailSerializer}
+    )
+    def get(self, request, chain_id, item_id):
+        try:
+            selector = MenuItemSelector()
+            menu_item = selector.get_menu_item_by_id(item_id)
+
+            if not menu_item:
+                return self.not_found_response(message="Menu item not found")
+
+            if menu_item.chain_id != int(chain_id):
+                return self.error_response(
+                    message="Menu item does not belong to this chain"
+                )
+
+            serializer = MenuItemDetailSerializer(menu_item, context={'request': request})
+            return self.success_response(
+                data=serializer.data,
+                message="Menu item retrieved successfully"
+            )
+
+        except Exception as e:
+            return self.error_response(
+                message=f"Error: {str(e)}",
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+    @extend_schema(
+        tags=['Dishes'],
+        summary="Update chain menu item",
+        description="Update menu item information for chain",
+        request=MenuItemUpdateSerializer,
+        responses={200: MenuItemDetailSerializer}
+    )
+    def put(self, request, chain_id, item_id):
+        try:
+            selector = MenuItemSelector()
+            menu_item = selector.get_menu_item_by_id(item_id)
+
+            if not menu_item:
+                return self.not_found_response(message="Menu item not found")
+
+            if menu_item.chain_id != int(chain_id):
+                return self.error_response(
+                    message="Menu item does not belong to this chain"
+                )
+
+            service = MenuItemService()
+            result = service.update_menu_item_by_chain(item_id, request.data, request.user)
+
+            if result['success']:
+                serializer = MenuItemDetailSerializer(result['data'], context={'request': request})
+                return self.success_response(
+                    data=serializer.data,
+                    message=result['message']
+                )
+            else:
+                return self.error_response(
+                    message=result['message'],
+                    errors=result.get('errors')
+                )
+
+        except Exception as e:
+            return self.error_response(
+                message=f"Error: {str(e)}",
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+    @extend_schema(
+        tags=['Dishes'],
+        summary="Delete chain menu item",
+        description="Soft delete menu item for chain",
+        responses={204}
+    )
+    def delete(self, request, chain_id, item_id):
+        try:
+            selector = MenuItemSelector()
+            menu_item = selector.get_menu_item_by_id(item_id)
+
+            if not menu_item:
+                return self.not_found_response(message="Menu item not found")
+
+            if menu_item.chain_id != int(chain_id):
+                return self.error_response(
+                    message="Menu item does not belong to this chain"
+                )
+
+            service = MenuItemService()
+            result = service.delete_menu_item_by_chain(item_id, request.user)
 
             if result['success']:
                 return self.deleted_response(message=result['message'])
