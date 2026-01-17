@@ -53,3 +53,6 @@ logs/
 .DS_Store
 Thumbs.db
 
+# Documentation files (internal use only)
+../API_DEVELOPMENT_RULES.md
+../CLAUDE.md

@@ -10,10 +10,10 @@ except ImportError:
     CELERY_AVAILABLE = False
 
 
-def update_menu_item_rating_stats(menu_item_id):
+def _update_menu_item_rating_stats_sync(menu_item_id):
     """
-    Update menu item rating statistics
-    This can be called both synchronously and asynchronously
+    Update menu item rating statistics (synchronous)
+    This is the actual implementation that updates the database
     """
     from .selectors import RatingSelector
 
@@ -39,9 +39,9 @@ if CELERY_AVAILABLE:
         """
         Celery task for updating menu item rating statistics
         """
-        return update_menu_item_rating_stats(menu_item_id)
+        return _update_menu_item_rating_stats_sync(menu_item_id)
 
-    # Update the function to use the Celery task
+    # Async wrapper function
     def update_menu_item_rating_stats(menu_item_id):
         """
         Update menu item rating statistics asynchronously if Celery is available
@@ -51,7 +51,10 @@ if CELERY_AVAILABLE:
             return True
         except Exception:
             # Fallback to synchronous processing
-            return update_menu_item_rating_stats(menu_item_id)
+            return _update_menu_item_rating_stats_sync(menu_item_id)
+else:
+    # Fallback to synchronous processing if Celery is not available
+    update_menu_item_rating_stats = _update_menu_item_rating_stats_sync
 
 
 # TODO: Remove this task - helpful votes feature has been removed

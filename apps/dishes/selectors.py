@@ -1,39 +1,77 @@
 from django.db import models
 from django.db.models import Q
 from .models import Category, MenuItem
+from .cache_utils import (
+    CacheOperations,
+    CacheTTL,
+    make_category_list_key,
+    make_category_detail_key,
+    make_category_slug_key,
+    make_menu_item_list_key,
+    make_menu_item_detail_key,
+    make_menu_item_slug_key,
+    make_menu_item_featured_key,
+)
 
 
 class CategorySelector:
     """
     Selector layer - Chịu trách nhiệm truy vấn dữ liệu từ database (SELECT ONLY)
+    Enhanced with Redis caching
     """
 
     def get_category_by_id(self, category_id):
         """
-        Get single category by ID (SELECT ONLY)
+        Get single category by ID (SELECT ONLY) - Cached
         """
-        try:
-            return Category.objects.get(id=category_id, is_active=True)
-        except Category.DoesNotExist:
-            return None
+        cache_key = make_category_detail_key(category_id)
+
+        def cache_miss_handler():
+            try:
+                return Category.objects.get(id=category_id, is_active=True)
+            except Category.DoesNotExist:
+                return None
+
+        return CacheOperations.get_or_set(cache_key, cache_miss_handler, CacheTTL.DEFAULT)
 
     def get_category_by_slug(self, restaurant_id, slug):
         """
-        Get single category by restaurant and slug (SELECT ONLY)
+        Get single category by restaurant and slug (SELECT ONLY) - Cached
         """
-        try:
-            return Category.objects.get(
-                restaurant_id=restaurant_id,
-                slug=slug,
-                is_active=True
-            )
-        except Category.DoesNotExist:
-            return None
+        cache_key = make_category_slug_key('restaurant', restaurant_id, slug)
+
+        def cache_miss_handler():
+            try:
+                return Category.objects.get(
+                    restaurant_id=restaurant_id,
+                    slug=slug,
+                    is_active=True
+                )
+            except Category.DoesNotExist:
+                return None
+
+        return CacheOperations.get_or_set(cache_key, cache_miss_handler, CacheTTL.DEFAULT)
 
     def get_categories_by_restaurant(self, restaurant_id, filters=None):
         """
-        Get categories for a restaurant (SELECT ONLY)
+        Get categories for a restaurant (SELECT ONLY) - Cached (skip if search filter)
         """
+        if filters is None:
+            filters = {}
+
+        # Bypass cache for search queries (too many variants)
+        if filters.get('search'):
+            return self._get_categories_by_restaurant_from_db(restaurant_id, filters)
+
+        cache_key = make_category_list_key('restaurant', restaurant_id)
+
+        def cache_miss_handler():
+            return self._get_categories_by_restaurant_from_db(restaurant_id, filters)
+
+        return CacheOperations.get_or_set(cache_key, cache_miss_handler, CacheTTL.DEFAULT)
+
+    def _get_categories_by_restaurant_from_db(self, restaurant_id, filters=None):
+        """Helper method to fetch categories from database"""
         if filters is None:
             filters = {}
 
@@ -51,11 +89,27 @@ class CategorySelector:
             )
 
         return queryset.order_by('display_order', 'name')
-    
+
     def get_categories_by_chain(self, chain_id, filters=None):
         """
-        Get categories for a chain (SELECT ONLY)
+        Get categories for a chain (SELECT ONLY) - Cached (skip if search filter)
         """
+        if filters is None:
+            filters = {}
+
+        # Bypass cache for search queries (too many variants)
+        if filters.get('search'):
+            return self._get_categories_by_chain_from_db(chain_id, filters)
+
+        cache_key = make_category_list_key('chain', chain_id)
+
+        def cache_miss_handler():
+            return self._get_categories_by_chain_from_db(chain_id, filters)
+
+        return CacheOperations.get_or_set(cache_key, cache_miss_handler, CacheTTL.DEFAULT)
+
+    def _get_categories_by_chain_from_db(self, chain_id, filters=None):
+        """Helper method to fetch categories from database"""
         if filters is None:
             filters = {}
 
@@ -73,7 +127,7 @@ class CategorySelector:
             )
 
         return queryset.order_by('display_order', 'name')
-    
+
     def get_category_by_slug_and_chain(self, chain_id, slug):
         """
         Get single category by chain and slug (SELECT ONLY)
@@ -165,34 +219,62 @@ class CategorySelector:
 class MenuItemSelector:
     """
     Selector layer for MenuItem model (SELECT ONLY)
+    Enhanced with Redis caching
     """
 
     def get_menu_item_by_id(self, item_id):
         """
-        Get single menu item by ID (SELECT ONLY)
+        Get single menu item by ID (SELECT ONLY) - Cached
         """
-        try:
-            return MenuItem.objects.get(id=item_id)
-        except MenuItem.DoesNotExist:
-            return None
+        cache_key = make_menu_item_detail_key(item_id)
+
+        def cache_miss_handler():
+            try:
+                return MenuItem.objects.get(id=item_id)
+            except MenuItem.DoesNotExist:
+                return None
+
+        return CacheOperations.get_or_set(cache_key, cache_miss_handler, CacheTTL.DEFAULT)
 
     def get_menu_item_by_slug(self, restaurant_id, slug):
         """
-        Get single menu item by restaurant and slug (SELECT ONLY)
+        Get single menu item by restaurant and slug (SELECT ONLY) - Cached
         """
-        try:
-            return MenuItem.objects.get(
-                restaurant_id=restaurant_id,
-                slug=slug,
-                is_available=True
-            )
-        except MenuItem.DoesNotExist:
-            return None
+        cache_key = make_menu_item_slug_key('restaurant', restaurant_id, slug)
+
+        def cache_miss_handler():
+            try:
+                return MenuItem.objects.get(
+                    restaurant_id=restaurant_id,
+                    slug=slug,
+                    is_available=True
+                )
+            except MenuItem.DoesNotExist:
+                return None
+
+        return CacheOperations.get_or_set(cache_key, cache_miss_handler, CacheTTL.DEFAULT)
 
     def get_menu_items_by_restaurant(self, restaurant_id, filters=None):
         """
-        Get menu items for a restaurant (SELECT ONLY)
+        Get menu items for a restaurant (SELECT ONLY) - Cached
+        Uses filter hash for cache key when filters are present
         """
+        if filters is None:
+            filters = {}
+
+        # Bypass cache for search queries (too many variants)
+        if filters.get('search'):
+            return self._get_menu_items_by_restaurant_from_db(restaurant_id, filters)
+
+        cache_key = make_menu_item_list_key('restaurant', restaurant_id, filters)
+
+        def cache_miss_handler():
+            return self._get_menu_items_by_restaurant_from_db(restaurant_id, filters)
+
+        return CacheOperations.get_or_set(cache_key, cache_miss_handler, CacheTTL.DEFAULT)
+
+    def _get_menu_items_by_restaurant_from_db(self, restaurant_id, filters=None):
+        """Helper method to fetch menu items from database"""
         if filters is None:
             filters = {}
 
@@ -247,11 +329,28 @@ class MenuItemSelector:
             )
 
         return queryset.order_by('category__display_order', 'display_order', 'name')
-    
+
     def get_menu_items_by_chain(self, chain_id, filters=None):
         """
-        Get menu items for a chain (SELECT ONLY)
+        Get menu items for a chain (SELECT ONLY) - Cached
+        Uses filter hash for cache key when filters are present
         """
+        if filters is None:
+            filters = {}
+
+        # Bypass cache for search queries (too many variants)
+        if filters.get('search'):
+            return self._get_menu_items_by_chain_from_db(chain_id, filters)
+
+        cache_key = make_menu_item_list_key('chain', chain_id, filters)
+
+        def cache_miss_handler():
+            return self._get_menu_items_by_chain_from_db(chain_id, filters)
+
+        return CacheOperations.get_or_set(cache_key, cache_miss_handler, CacheTTL.DEFAULT)
+
+    def _get_menu_items_by_chain_from_db(self, chain_id, filters=None):
+        """Helper method to fetch menu items from database"""
         if filters is None:
             filters = {}
 
@@ -355,18 +454,23 @@ class MenuItemSelector:
 
     def get_featured_menu_items(self, restaurant_id, limit=None):
         """
-        Get featured menu items for restaurant (SELECT ONLY)
+        Get featured menu items for restaurant (SELECT ONLY) - Cached
         """
-        queryset = MenuItem.objects.filter(
-            restaurant_id=restaurant_id,
-            is_featured=True,
-            is_available=True
-        ).order_by('-rating', '-total_reviews')
+        cache_key = make_menu_item_featured_key('restaurant', restaurant_id, limit)
 
-        if limit:
-            queryset = queryset[:limit]
+        def cache_miss_handler():
+            queryset = MenuItem.objects.filter(
+                restaurant_id=restaurant_id,
+                is_featured=True,
+                is_available=True
+            ).order_by('-rating', '-total_reviews')
 
-        return queryset
+            if limit:
+                queryset = queryset[:limit]
+
+            return queryset
+
+        return CacheOperations.get_or_set(cache_key, cache_miss_handler, CacheTTL.DEFAULT)
 
     def get_menu_items_by_category(self, restaurant_id, category_id, filters=None):
         """

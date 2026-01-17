@@ -8,7 +8,7 @@ urlpatterns = [
     path('chains/<int:chain_id>/categories/<int:category_id>/', views.ChainCategoryDetailView.as_view(), name='chain-category-detail'),
     
     path('chains/<int:chain_id>/menu-items/', views.ChainMenuItemListView.as_view(), name='chain-menu-items'),
-    path('chains/<int:chain_id>/menu-items/<int:item_id>/', views.ChainMenuItemDetailView.as_view(), name='chain-menu-item-detail'),
+    path('chains/<int:chain_id>/menu-items/<int:id>/', views.ChainMenuItemDetailView.as_view(), name='chain-menu-item-detail'),
     
     # ===== Restaurant Category endpoints =====
     path('<int:restaurant_id>/categories/', views.CategoryListView.as_view(), name='category-list'),

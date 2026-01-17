@@ -273,17 +273,17 @@ class ChainMenuItemsView(StandardResponseMixin, APIView):
 
 class ChainMenuItemDetailView(StandardResponseMixin, APIView):
     """
-    GET /api/chains/{chain_id}/menu-items/{item_id}/ - Get menu item details
+    GET /api/chains/{chain_id}/menu-items/{id}/ - Get menu item details
     """
     permission_classes = [permissions.AllowAny]
-    
+
     @extend_schema(
         tags=['Chain Menu'],
         summary="Get chain menu item details",
         description="Get detailed information about a menu item",
         responses={200: MenuItemDetailSerializer}
     )
-    def get(self, request, chain_id, item_id):
+    def get(self, request, chain_id, id):
         """Get menu item details"""
         try:
             # Validate chain exists
@@ -291,27 +291,27 @@ class ChainMenuItemDetailView(StandardResponseMixin, APIView):
             chain = chain_selector.get_chain_by_id(chain_id)
             if not chain:
                 return ApiResponse.not_found(message="Chain not found")
-            
+
             # Get menu item
             menu_item_selector = MenuItemSelector()
-            menu_item = menu_item_selector.get_menu_item_by_id(item_id)
-            
+            menu_item = menu_item_selector.get_menu_item_by_id(id)
+
             if not menu_item:
                 return ApiResponse.not_found(message="Menu item not found")
-            
+
             # Validate item belongs to chain
             if menu_item.chain_id != chain_id:
                 return ApiResponse.bad_request(
                     message="Menu item does not belong to this chain"
                 )
-            
+
             serializer = MenuItemDetailSerializer(menu_item, context={'request': request})
-            
+
             return ApiResponse.success(
                 data=serializer.data,
                 message="Menu item retrieved successfully"
             )
-        
+
         except Exception as e:
             return ApiResponse.error(
                 message=f"Error: {str(e)}",

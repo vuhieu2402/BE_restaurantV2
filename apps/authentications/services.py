@@ -575,6 +575,11 @@ class VerificationService:
                         if user:
                             user.is_verified = True
                             user.save()
+                            
+                            # ✅ CRITICAL: Invalidate cache sau khi update user
+                            # Nếu không làm, user sẽ bị cache cũ với is_verified=False
+                            UserSelector.invalidate_user_cache(user)
+                            
                             logger.info(f"User {user.email or user.phone_number} verified successfully")
                     except Exception:
                         pass  # User không tồn tại
@@ -765,6 +770,9 @@ class PasswordService:
                 # Reset password
                 user.set_password(new_password)
                 user.save()
+                
+                # ✅ CRITICAL: Invalidate cache sau khi update user
+                UserSelector.invalidate_user_cache(user)
 
                 # Revoke all sessions of this user
                 auth_service = AuthService()
@@ -796,6 +804,9 @@ class PasswordService:
                 # Change password
                 user.set_password(new_password)
                 user.save()
+                
+                # ✅ CRITICAL: Invalidate cache sau khi update user
+                UserSelector.invalidate_user_cache(user)
 
                 # Revoke all sessions except current
                 auth_service = AuthService()

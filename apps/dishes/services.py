@@ -2,6 +2,7 @@ from django.db import transaction
 from django.core.exceptions import ValidationError
 from .selectors import CategorySelector, MenuItemSelector
 from .models import Category, MenuItem
+from .cache_utils import CategoryCacheInvalidator, MenuItemCacheInvalidator
 import logging
 
 logger = logging.getLogger(__name__)
@@ -10,6 +11,7 @@ logger = logging.getLogger(__name__)
 class CategoryService:
     """
     Service layer - Xử lý business logic và CUD operations cho Category
+    Enhanced with automatic cache invalidation
     """
 
     def __init__(self):
@@ -18,6 +20,7 @@ class CategoryService:
     def create_category(self, restaurant_id, category_data, user=None):
         """
         Create category với validation và business rules
+        Invalidates category list cache on success
         """
         try:
             with transaction.atomic():
@@ -35,6 +38,12 @@ class CategoryService:
 
                 # Create category
                 category = Category.objects.create(**category_data)
+
+                # Invalidate cache for this restaurant's categories
+                CategoryCacheInvalidator.invalidate_all_categories(
+                    scope_type='restaurant',
+                    scope_id=restaurant_id
+                )
 
                 # Get created data via selector
                 created_category = self.selector.get_category_by_id(category.id)
@@ -55,6 +64,7 @@ class CategoryService:
     def update_category(self, category_id, update_data, user=None):
         """
         Update category với validation và business rules
+        Invalidates category caches on success
         """
         try:
             with transaction.atomic():
@@ -65,6 +75,10 @@ class CategoryService:
                         'success': False,
                         'message': 'Category not found'
                     }
+
+                # Determine scope type and id for invalidation
+                scope_type = 'chain' if category.chain_id else 'restaurant'
+                scope_id = category.chain_id or category.restaurant_id
 
                 # Validate business rules
                 validation_errors = self._validate_update_data(category, update_data)
@@ -80,6 +94,13 @@ class CategoryService:
                     if hasattr(category, field):
                         setattr(category, field, value)
                 category.save()
+
+                # Invalidate caches
+                CategoryCacheInvalidator.invalidate_category(
+                    category_id=category_id,
+                    scope_type=scope_type,
+                    scope_id=scope_id
+                )
 
                 # Get updated data via selector
                 updated_category = self.selector.get_category_by_id(category.id)
@@ -100,6 +121,7 @@ class CategoryService:
     def delete_category(self, category_id, user=None):
         """
         Delete category với business rules validation
+        Invalidates category caches on success
         """
         try:
             with transaction.atomic():
@@ -111,6 +133,10 @@ class CategoryService:
                         'message': 'Category not found'
                     }
 
+                # Determine scope type and id for invalidation
+                scope_type = 'chain' if category.chain_id else 'restaurant'
+                scope_id = category.chain_id or category.restaurant_id
+
                 # Validate business rules for delete
                 if not self._can_delete_category(category):
                     return {
@@ -121,6 +147,13 @@ class CategoryService:
                 # Soft delete
                 category.is_active = False
                 category.save()
+
+                # Invalidate caches
+                CategoryCacheInvalidator.invalidate_category(
+                    category_id=category_id,
+                    scope_type=scope_type,
+                    scope_id=scope_id
+                )
 
                 return {
                     'success': True,
@@ -304,6 +337,7 @@ class CategoryService:
     def create_category_by_chain(self, chain_id, category_data, user=None):
         """
         Create category cho chain với validation và business rules
+        Invalidates chain category cache on success
         """
         try:
             with transaction.atomic():
@@ -321,6 +355,12 @@ class CategoryService:
 
                 # Create category
                 category = Category.objects.create(**category_data)
+
+                # Invalidate cache for this chain's categories
+                CategoryCacheInvalidator.invalidate_all_categories(
+                    scope_type='chain',
+                    scope_id=chain_id
+                )
 
                 # Get created data via selector
                 created_category = self.selector.get_category_by_id(category.id)
@@ -341,6 +381,7 @@ class CategoryService:
     def update_category_by_chain(self, category_id, update_data, user=None):
         """
         Update category cho chain với validation và business rules
+        Invalidates chain category cache on success
         """
         try:
             with transaction.atomic():
@@ -359,6 +400,8 @@ class CategoryService:
                         'message': 'Category does not belong to a chain'
                     }
 
+                chain_id = category.chain_id
+
                 # Validate business rules
                 validation_errors = self._validate_update_data_by_chain(category, update_data)
                 if validation_errors:
@@ -373,6 +416,13 @@ class CategoryService:
                     if hasattr(category, field):
                         setattr(category, field, value)
                 category.save()
+
+                # Invalidate caches
+                CategoryCacheInvalidator.invalidate_category(
+                    category_id=category_id,
+                    scope_type='chain',
+                    scope_id=chain_id
+                )
 
                 # Get updated data via selector
                 updated_category = self.selector.get_category_by_id(category.id)
@@ -393,6 +443,7 @@ class CategoryService:
     def delete_category_by_chain(self, category_id, user=None):
         """
         Delete category cho chain với business rules validation
+        Invalidates chain category cache on success
         """
         try:
             with transaction.atomic():
@@ -411,6 +462,8 @@ class CategoryService:
                         'message': 'Category does not belong to a chain'
                     }
 
+                chain_id = category.chain_id
+
                 # Validate business rules for delete
                 if not self._can_delete_category(category):
                     return {
@@ -421,6 +474,13 @@ class CategoryService:
                 # Soft delete
                 category.is_active = False
                 category.save()
+
+                # Invalidate caches
+                CategoryCacheInvalidator.invalidate_category(
+                    category_id=category_id,
+                    scope_type='chain',
+                    scope_id=chain_id
+                )
 
                 return {
                     'success': True,
@@ -507,6 +567,7 @@ class CategoryService:
 class MenuItemService:
     """
     Service layer - Xử lý business logic và CUD operations cho MenuItem
+    Enhanced with automatic cache invalidation
     """
 
     def __init__(self):
@@ -515,6 +576,7 @@ class MenuItemService:
     def create_menu_item(self, restaurant_id, menu_item_data, user=None):
         """
         Create menu item với validation và business rules
+        Invalidates menu item cache on success
         """
         try:
             with transaction.atomic():
@@ -662,6 +724,14 @@ class MenuItemService:
                 # Create menu item
                 menu_item = MenuItem.objects.create(**normalized_data)
 
+                # Invalidate caches
+                MenuItemCacheInvalidator.invalidate_menu_item(
+                    item_id=menu_item.id,
+                    scope_type='restaurant',
+                    scope_id=restaurant_id,
+                    category_id=normalized_data.get('category_id')
+                )
+
                 # Get created data via selector
                 created_item = self.selector.get_menu_item_by_id(menu_item.id)
 
@@ -681,6 +751,7 @@ class MenuItemService:
     def update_menu_item(self, menu_item_id, update_data, user=None):
         """
         Update menu item với validation và business rules
+        Invalidates menu item cache on success
         """
         try:
             with transaction.atomic():
@@ -692,15 +763,19 @@ class MenuItemService:
                         'message': 'Menu item not found'
                     }
 
+                # Determine scope for invalidation
+                scope_type = 'chain' if menu_item.chain_id else 'restaurant'
+                scope_id = menu_item.chain_id or menu_item.restaurant_id
+
                 # Normalize data: handle category field (ForeignKey)
                 normalized_data = update_data.copy()
                 if 'category' in normalized_data:
                     category_value = normalized_data.get('category')
-                    
+
                     # Handle list values (e.g., ['1'] -> '1')
                     if isinstance(category_value, list):
                         category_value = category_value[0] if category_value else None
-                    
+
                     # Convert empty/zero values to None
                     if category_value == 0 or category_value == '0' or category_value == '' or category_value is None:
                         normalized_data['category'] = None
@@ -732,7 +807,7 @@ class MenuItemService:
                 for field in boolean_fields:
                     if field in normalized_data:
                         value = normalized_data.get(field)
-                        
+
                         # Handle string boolean values from multipart/form-data
                         if isinstance(value, str):
                             value_lower = value.lower().strip()
@@ -752,23 +827,23 @@ class MenuItemService:
                         elif isinstance(value, (int, float)):
                             # Convert 1/0 to True/False
                             normalized_data[field] = bool(value)
-                
+
                 # Normalize DecimalField values (price, original_price)
                 from decimal import Decimal, InvalidOperation
                 decimal_fields = ['price', 'original_price']
                 for field in decimal_fields:
                     if field in normalized_data and normalized_data[field] is not None:
                         value = normalized_data[field]
-                        
+
                         # Handle list values (e.g., ['50000'] -> '50000')
                         if isinstance(value, list):
                             value = value[0] if value else None
-                        
+
                         # Handle empty string
                         if value == '' or (isinstance(value, str) and value.strip() == ''):
                             normalized_data[field] = None
                             continue
-                        
+
                         # Convert to Decimal
                         try:
                             if isinstance(value, str):
@@ -796,6 +871,14 @@ class MenuItemService:
                         setattr(menu_item, field, value)
                 menu_item.save()
 
+                # Invalidate caches
+                MenuItemCacheInvalidator.invalidate_menu_item(
+                    item_id=menu_item_id,
+                    scope_type=scope_type,
+                    scope_id=scope_id,
+                    category_id=menu_item.category_id
+                )
+
                 # Get updated data via selector
                 updated_item = self.selector.get_menu_item_by_id(menu_item.id)
 
@@ -815,6 +898,7 @@ class MenuItemService:
     def delete_menu_item(self, menu_item_id, user=None):
         """
         Delete menu item với business rules validation
+        Invalidates menu item cache on success
         """
         try:
             with transaction.atomic():
@@ -826,6 +910,10 @@ class MenuItemService:
                         'message': 'Menu item not found'
                     }
 
+                # Determine scope for invalidation
+                scope_type = 'chain' if menu_item.chain_id else 'restaurant'
+                scope_id = menu_item.chain_id or menu_item.restaurant_id
+
                 # Validate business rules for delete
                 if not self._can_delete_menu_item(menu_item):
                     return {
@@ -836,6 +924,14 @@ class MenuItemService:
                 # Soft delete - set is_available to False
                 menu_item.is_available = False
                 menu_item.save()
+
+                # Invalidate caches
+                MenuItemCacheInvalidator.invalidate_menu_item(
+                    item_id=menu_item_id,
+                    scope_type=scope_type,
+                    scope_id=scope_id,
+                    category_id=menu_item.category_id
+                )
 
                 return {
                     'success': True,

@@ -130,6 +130,8 @@ class UserSerializer(serializers.ModelSerializer):
 
     def update(self, instance, validated_data):
         """Update user with proper password handling"""
+        from .selectors import UserSelector
+        
         password = validated_data.pop('password', None)
         password_confirm = validated_data.pop('password_confirm', None)
 
@@ -144,6 +146,11 @@ class UserSerializer(serializers.ModelSerializer):
             setattr(instance, attr, value)
 
         instance.save()
+        
+        # ✅ CRITICAL: Invalidate cache sau khi update user
+        # Nếu không làm, các thông tin cũ sẽ được cached
+        UserSelector.invalidate_user_cache(instance)
+        
         return instance
 
 
@@ -558,6 +565,22 @@ class UserProfileUpdateSerializer(serializers.ModelSerializer):
             if age < 1 or age > 120:
                 raise serializers.ValidationError("Độ tuổi không hợp lệ")
         return value
+    
+    def update(self, instance, validated_data):
+        """Update user profile with cache invalidation"""
+        from .selectors import UserSelector
+        
+        # Update fields
+        for attr, value in validated_data.items():
+            setattr(instance, attr, value)
+        
+        instance.save()
+        
+        # ✅ CRITICAL: Invalidate cache sau khi update user
+        # Nếu không làm, các thông tin cũ (email, phone, etc.) sẽ được cached
+        UserSelector.invalidate_user_cache(instance)
+        
+        return instance
 
 
 class AuthResponseSerializer(serializers.Serializer):

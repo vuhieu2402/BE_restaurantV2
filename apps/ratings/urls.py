@@ -28,24 +28,7 @@ urlpatterns = [
         name='menu-item-rating-summary'
     ),
 
-    # TODO: Remove these URL patterns - helpful voting and reporting features have been removed
-    # # Rating interactions (helpful/report)
-    # path(
-    #     'chains/<int:chain_id>/menu-items/<int:item_id>/ratings/<int:rating_id>/helpful/',
-    #     views.RatingInteractionView.as_view(),
-    #     name='menu-item-rating-helpful',
-    #     kwargs={'action': 'helpful'}
-    # ),
-    #
-    # path(
-    #     'chains/<int:chain_id>/menu-items/<int:item_id>/ratings/<int:rating_id>/report/',
-    #     views.RatingInteractionView.as_view(),
-    #     name='menu-item-rating-report',
-    #     kwargs={'action': 'report'}
-    # ),
-
-    # ===== User Ratings =====
-    # Get current user's ratings
+    
     path(
         'users/me/ratings/',
         views.UserRatingsView.as_view(),

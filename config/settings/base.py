@@ -1,5 +1,9 @@
 from pathlib import Path
 from decouple import config
+import logging
+
+# Get logger
+logger = logging.getLogger(__name__)
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 # base.py is in config/settings/, so we need 3x parent to get to project root
@@ -90,6 +94,26 @@ CHANNEL_LAYERS = {
             'hosts': [(config('REDIS_HOST', default='127.0.0.1'), config('REDIS_PORT', default=6379, cast=int))],
         },
     },
+}
+
+# Cache configuration using Redis
+# Using database 1 for cache (separate from Celery's database 0)
+CACHES = {
+    'default': {
+        'BACKEND': 'django_redis.cache.RedisCache',
+        'LOCATION': f"redis://{config('REDIS_HOST', default='127.0.0.1')}:{config('REDIS_PORT', default=6379, cast=int)}/1",
+        'OPTIONS': {
+            'CLIENT_CLASS': 'django_redis.client.DefaultClient',
+            'CONNECTION_POOL_KWARGS': {
+                'max_connections': 50,
+                'retry_on_timeout': True,
+            },
+            'SOCKET_CONNECT_TIMEOUT': 5,
+            'SOCKET_TIMEOUT': 5,
+        },
+        'KEY_PREFIX': 'restaurant',
+        'TIMEOUT': 3600,  # Default TTL: 1 hour
+    }
 }
 
 REST_FRAMEWORK = {
@@ -236,6 +260,45 @@ STATIC_ROOT = BASE_DIR / 'staticfiles'
 
 MEDIA_URL = '/media/'
 MEDIA_ROOT = BASE_DIR / 'media'
+
+# ==================== STORAGE CONFIGURATION ====================
+# AWS S3 / MinIO Storage Configuration
+USE_S3 = config('USE_S3', default=False, cast=bool)
+
+if USE_S3:
+    # AWS S3 Configuration
+    AWS_ACCESS_KEY_ID = config('AWS_ACCESS_KEY_ID')
+    AWS_SECRET_ACCESS_KEY = config('AWS_SECRET_ACCESS_KEY')
+    AWS_STORAGE_BUCKET_NAME = config('AWS_STORAGE_BUCKET_NAME')
+    AWS_S3_REGION_NAME = config('AWS_S3_REGION_NAME', default='ap-southeast-1')
+    AWS_S3_CUSTOM_DOMAIN = config('AWS_S3_CUSTOM_DOMAIN', default=None)
+    
+    # S3 settings - NO ACL (use bucket policy instead)
+    AWS_S3_OBJECT_PARAMETERS = {
+        'CacheControl': 'max-age=86400',  # Cache 1 day
+    }
+    AWS_S3_FILE_OVERWRITE = config('AWS_S3_FILE_OVERWRITE', default=False, cast=bool)
+    AWS_DEFAULT_ACL = None  # Don't use ACLs - use bucket policy
+    AWS_S3_USE_SSL = config('AWS_S3_USE_SSL', default=True, cast=bool)
+    AWS_S3_VERIFY = config('AWS_S3_VERIFY', default=True, cast=bool)
+    AWS_QUERYSTRING_AUTH = config('AWS_QUERYSTRING_AUTH', default=False, cast=bool)
+    
+    # Storage backend
+    DEFAULT_FILE_STORAGE = 'config.storage.storage.MediaStorage'
+    
+    # Media URL
+    if AWS_S3_CUSTOM_DOMAIN:
+        MEDIA_URL = f'https://{AWS_S3_CUSTOM_DOMAIN}/media/'
+    else:
+        MEDIA_URL = f'https://{AWS_STORAGE_BUCKET_NAME}.s3.{AWS_S3_REGION_NAME}.amazonaws.com/media/'
+    
+    logger.info(f"Using S3 storage: {AWS_STORAGE_BUCKET_NAME}")
+    logger.info(f"Media URL: {MEDIA_URL}")
+else:
+    # Local storage fallback
+    MEDIA_URL = '/media/'
+    MEDIA_ROOT = BASE_DIR / 'media'
+    logger.info("Using local file storage")
 
 # Default primary key field type
 # https://docs.djangoproject.com/en/4.2/ref/settings/#default-auto-field

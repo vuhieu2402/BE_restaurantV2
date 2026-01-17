@@ -955,9 +955,9 @@ class ChainMenuItemListView(StandardResponseMixin, APIView):
 
 class ChainMenuItemDetailView(StandardResponseMixin, APIView):
     """
-    GET /api/chains/{chain_id}/menu-items/{item_id}/ - Get menu item details
-    PUT /api/chains/{chain_id}/menu-items/{item_id}/ - Update menu item
-    DELETE /api/chains/{chain_id}/menu-items/{item_id}/ - Delete menu item
+    GET /api/chains/{chain_id}/menu-items/{id}/ - Get menu item details
+    PUT /api/chains/{chain_id}/menu-items/{id}/ - Update menu item
+    DELETE /api/chains/{chain_id}/menu-items/{id}/ - Delete menu item
     """
     permission_classes = [permissions.AllowAny]
 
@@ -967,10 +967,10 @@ class ChainMenuItemDetailView(StandardResponseMixin, APIView):
         description="Get detailed information about a specific menu item in chain",
         responses={200: MenuItemDetailSerializer}
     )
-    def get(self, request, chain_id, item_id):
+    def get(self, request, chain_id, id):
         try:
             selector = MenuItemSelector()
-            menu_item = selector.get_menu_item_by_id(item_id)
+            menu_item = selector.get_menu_item_by_id(id)
 
             if not menu_item:
                 return self.not_found_response(message="Menu item not found")
@@ -999,10 +999,10 @@ class ChainMenuItemDetailView(StandardResponseMixin, APIView):
         request=MenuItemUpdateSerializer,
         responses={200: MenuItemDetailSerializer}
     )
-    def put(self, request, chain_id, item_id):
+    def put(self, request, chain_id, id):
         try:
             selector = MenuItemSelector()
-            menu_item = selector.get_menu_item_by_id(item_id)
+            menu_item = selector.get_menu_item_by_id(id)
 
             if not menu_item:
                 return self.not_found_response(message="Menu item not found")
@@ -1013,7 +1013,7 @@ class ChainMenuItemDetailView(StandardResponseMixin, APIView):
                 )
 
             service = MenuItemService()
-            result = service.update_menu_item_by_chain(item_id, request.data, request.user)
+            result = service.update_menu_item_by_chain(id, request.data, request.user)
 
             if result['success']:
                 serializer = MenuItemDetailSerializer(result['data'], context={'request': request})
@@ -1039,10 +1039,10 @@ class ChainMenuItemDetailView(StandardResponseMixin, APIView):
         description="Soft delete menu item for chain",
         responses={204}
     )
-    def delete(self, request, chain_id, item_id):
+    def delete(self, request, chain_id, id):
         try:
             selector = MenuItemSelector()
-            menu_item = selector.get_menu_item_by_id(item_id)
+            menu_item = selector.get_menu_item_by_id(id)
 
             if not menu_item:
                 return self.not_found_response(message="Menu item not found")
@@ -1053,7 +1053,7 @@ class ChainMenuItemDetailView(StandardResponseMixin, APIView):
                 )
 
             service = MenuItemService()
-            result = service.delete_menu_item_by_chain(item_id, request.user)
+            result = service.delete_menu_item_by_chain(id, request.user)
 
             if result['success']:
                 return self.deleted_response(message=result['message'])
