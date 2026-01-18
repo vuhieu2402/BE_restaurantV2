@@ -1,10 +1,12 @@
 # 🍽️ Restaurant Management System
 
 Hệ thống quản lý nhà hàng toàn diện với Django REST Framework, hỗ trợ WebSocket real-time, Celery background tasks, và AWS deployment.
-Được xây dựng cho 3 role: 
--customer https://v0-restaurant-management-interface.vercel.app/
--manager https://v0-restaurant-management-interface.vercel.app/manage 
--staff https://v0-restaurant-management-interface.vercel.app/staff 
+Được xây dựng cho 3 role: < để switch giữa các tài khoản hãy logout trước>
+-customer https://v0-restaurant-management-interface.vercel.app/   
+-manager https://v0-restaurant-management-interface.vercel.app/manage  (tài khoản đăng nhập 	manager@gmail.com/Hieu12345) 
+-staff https://v0-restaurant-management-interface.vercel.app/staff    (	user@example.com/Hieu12345)
+
+
 
 ## 📋 Mục lục
 
